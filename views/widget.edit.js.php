@@ -151,9 +151,11 @@ window.widget_better_honeycomb_form = new class {
 		const auto_color_binary = document.getElementById('auto_color_binary');
 		const show = auto_color_binary !== null && auto_color_binary.checked;
 
-		for (const row of this.#form.querySelectorAll('.js-auto-color-zero, .js-auto-color-one')) {
+		for (const row of this.#form.querySelectorAll(
+			'.js-binary-problem-value, .js-auto-color-zero, .js-auto-color-one'
+		)) {
 			row.style.display = show ? '' : 'none';
-			row.querySelectorAll('input').forEach(input => input.disabled = !show);
+			row.querySelectorAll('input, z-select').forEach(input => input.disabled = !show);
 
 			if (show) {
 				for (const colorpicker of row.querySelectorAll('.<?= ZBX_STYLE_COLOR_PICKER ?> input')) {

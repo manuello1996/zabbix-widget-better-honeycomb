@@ -1,0 +1,123 @@
+.better-honeycomb-toolbar {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	padding: 4px 10px 0;
+	box-sizing: border-box;
+}
+
+.better-honeycomb-filter {
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 0;
+	height: 24px;
+}
+
+.better-honeycomb-legend,
+.better-honeycomb-warning {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	padding: 4px 10px;
+	box-sizing: border-box;
+	font-size: 11px;
+}
+
+.better-honeycomb-legend-item {
+	display: inline-flex;
+	gap: 4px;
+	align-items: center;
+	white-space: nowrap;
+}
+
+.better-honeycomb-legend-swatch {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	border-radius: 2px;
+	background: var(--better-honeycomb-legend-color);
+}
+
+.better-honeycomb-warning {
+	color: var(--color-warning, #d98200);
+}
+
+.svg-honeycomb-cell[tabindex="0"] {
+	outline: none;
+}
+
+.svg-honeycomb-cell[tabindex="0"]:focus-visible path {
+	stroke-width: calc(var(--stroke-width) * 2);
+}
+
+.svg-honeycomb-cell-group-header path:first-child {
+	stroke-width: calc(var(--stroke-width) * 1.6);
+	stroke-dasharray: 28 14;
+}
+
+.svg-honeycomb-cell-selected path:first-child {
+	filter: drop-shadow(0 0 7px var(--stroke-selected));
+	stroke-width: calc(var(--stroke-width) * 2.4);
+}
+
+.svg-honeycomb-cell[tabindex="0"]:focus-visible path:first-child {
+	filter: drop-shadow(0 0 8px var(--stroke-selected));
+}
+
+.svg-honeycomb-cell-maintenance path:first-child {
+	stroke-dasharray: 18 10;
+}
+
+.svg-honeycomb-indicator circle,
+.svg-honeycomb-group-badge circle {
+	fill: var(--body-bg-color, #fff);
+	stroke: var(--stroke);
+	stroke-width: 16px;
+}
+
+.svg-honeycomb-indicator text,
+.svg-honeycomb-group-badge text,
+.svg-honeycomb-group-chevron {
+	fill: var(--font-color, #1f2c33);
+	font-weight: 700;
+	font-size: 92px;
+	pointer-events: none;
+}
+
+.svg-honeycomb-indicator-maintenance circle {
+	fill: #f5c542;
+}
+
+.svg-honeycomb-indicator-acknowledged circle {
+	fill: #6aa8ff;
+}
+
+.svg-honeycomb-indicator-trend-up circle {
+	fill: #0ec9ac;
+}
+
+.svg-honeycomb-indicator-trend-down circle {
+	fill: #ff465c;
+}
+
+.svg-honeycomb-indicator-trend-flat circle,
+.svg-honeycomb-indicator-trend-changed circle {
+	fill: #d8e3ea;
+}
+
+.svg-honeycomb-group-badge circle {
+	fill: #ff465c;
+	stroke: var(--body-bg-color, #fff);
+	stroke-width: 20px;
+}
+
+.svg-honeycomb-group-badge text {
+	fill: #fff;
+	font-size: 86px;
+}
+
+.svg-honeycomb-group-chevron {
+	fill: var(--stroke);
+	font-size: 110px;
+}

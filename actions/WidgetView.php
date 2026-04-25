@@ -32,6 +32,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 	private const LABEL_MAX_LINES = 10;
 	private const LABEL_MAX_LINE_LENGTH = 250;
 	private const MAX_ITEMS = 1000;
+	private const FORCE_SHOW_ALL_MAX_ITEMS = 5000;
+	private const COMPACT_RENDERING_THRESHOLD = 1500;
 	private const SPACER_CELLS_BETWEEN_GROUPS = 1;
 
 	protected function init(): void {
@@ -46,8 +48,15 @@ class WidgetView extends CControllerDashboardWidgetView {
 	protected function doAction(): void {
 		$force_show_all = ($this->fields_values['force_show_all'] ?? 0) == 1;
 		$cells_limit = $force_show_all
-			? null
+			? self::FORCE_SHOW_ALL_MAX_ITEMS + 1
 			: $this->getInput('max_items', self::MAX_ITEMS) + 1;
+
+		$cells = $this->getCells($cells_limit);
+		$has_more = $force_show_all && count($cells) > self::FORCE_SHOW_ALL_MAX_ITEMS;
+
+		if ($has_more) {
+			$cells = array_slice($cells, 0, self::FORCE_SHOW_ALL_MAX_ITEMS);
+		}
 
 		$data = [
 			'name' => $this->getInput('name', $this->widget->getDefaultName()),
@@ -55,12 +64,15 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'debug_mode' => $this->getDebugMode()
 			],
 			'vars' => [
-				'cells' => $this->getCells($cells_limit)
+				'cells' => $cells
 			]
 		];
 
 		if ($this->hasInput('with_config')) {
 			$data['vars']['config'] = $this->getConfig();
+			$data['vars']['config']['force_show_all_limit'] = self::FORCE_SHOW_ALL_MAX_ITEMS;
+			$data['vars']['config']['compact_rendering_threshold'] = self::COMPACT_RENDERING_THRESHOLD;
+			$data['vars']['config']['has_more'] = $has_more;
 		}
 
 		$this->setResponse(new CControllerResponseData($data));
@@ -117,7 +129,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$options = [
 			'output' => ['itemid', 'hostid', 'units', 'value_type', 'name_resolved', 'key_'],
-			'selectHosts' => ['name'],
+			'selectHosts' => ['name', 'maintenance_status'],
 			'webitems' => true,
 			'hostids' => $hostids,
 			'evaltype' => $this->fields_values['evaltype_item'],
@@ -140,7 +152,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		}
 
 		$items = CArrayHelper::renameObjectsKeys($db_items, ['name_resolved' => 'name']);
-		$group_by = $this->fields_values['group_by'] ?? WidgetForm::GROUP_BY_HOST;
+		$group_by = $this->fields_values['group_by'] ?? WidgetForm::GROUP_BY_NONE;
 		$is_grouping_enabled = $group_by != WidgetForm::GROUP_BY_NONE;
 		$item_patterns = $this->fields_values['items'] ?? ['*'];
 		$item_pattern_matchers = $this->compileItemPatternMatchers($item_patterns);
@@ -191,14 +203,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$total_items = count($items);
 		$batches = (int) ceil($total_items / $batch_size);
-		$group_item_counts = [];
-
-		foreach ($items as $item) {
-			$group_key = $this->getGroupKey($item, $group_by);
-			$group_item_counts[$group_key] = ($group_item_counts[$group_key] ?? 0) + 1;
-		}
-
 		$show = array_flip($this->fields_values['show']);
+		$config = $this->getConfig();
+		$acknowledged_problem_itemids = $this->getAcknowledgedProblemItemIds(array_column($items, 'itemid'));
 		$history_period = timeUnitToSeconds(CSettingsHelper::get(CSettingsHelper::HISTORY_PERIOD));
 		$group_new_line = ($this->fields_values['group_new_line'] ?? 0) == 1;
 		$cells = [];
@@ -209,7 +216,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		for ($batch = 0; $batch < $batches && count($cells) < $result_limit; $batch++) {
 			$batch_items = array_slice($items, $batch * $batch_size, $batch_size);
-			$db_history = Manager::History()->getLastValues($batch_items, 1, $history_period);
+			$db_history = Manager::History()->getLastValues($batch_items, 2, $history_period);
 
 			foreach ($batch_items as $item) {
 				if (!array_key_exists($item['itemid'], $db_history)) {
@@ -217,6 +224,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 
 				$last_value = $db_history[$item['itemid']][0]['value'];
+				$last_clock = $db_history[$item['itemid']][0]['clock'] ?? null;
+				$previous_value = $db_history[$item['itemid']][1]['value'] ?? null;
 
 				$primary_label = array_key_exists(WidgetForm::SHOW_PRIMARY_LABEL, $show)
 					? $this->getCellLabel($item, $last_value, [
@@ -252,17 +261,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					&& count($cells) < $result_limit - (2 + self::SPACER_CELLS_BETWEEN_GROUPS - 1)
 				) {
 					for ($i = 0; $i < self::SPACER_CELLS_BETWEEN_GROUPS; $i++) {
-						$cells[] = [
-							'hostid' => null,
-							'itemid' => 'spacer-'.$spacer_index++,
-							'primary_label' => '',
-							'secondary_label' => '',
-							'value' => null,
-							'is_numeric' => false,
-							'is_binary_units' => false,
-							'key_' => null,
-							'is_spacer' => true
-						];
+						$cells[] = $this->makeSpacerCell($spacer_index++);
 					}
 				}
 
@@ -273,17 +272,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					&& $group_key !== $previous_group_key
 					&& count($cells) < $result_limit - 2
 				) {
-					$cells[] = [
-						'hostid' => null,
-						'itemid' => 'group-break-'.$group_break_index++,
-						'primary_label' => '',
-						'secondary_label' => '',
-						'value' => null,
-						'is_numeric' => false,
-						'is_binary_units' => false,
-						'key_' => null,
-						'is_group_break' => true
-					];
+					$cells[] = $this->makeGroupBreakCell($group_break_index++);
 				}
 
 				if (
@@ -291,34 +280,22 @@ class WidgetView extends CControllerDashboardWidgetView {
 					&& ($previous_group_key === null || $group_key !== $previous_group_key)
 					&& count($cells) < $result_limit - 1
 				) {
-					$cells[] = [
-						'hostid' => null,
-						'itemid' => 'group-header-'.$group_header_index++,
-						'group_id' => $group_key,
-						'primary_label' => $this->getGroupTitle($item, $group_by),
-						'secondary_label' => ($group_item_counts[$group_key] ?? 0).' items',
-						'value' => null,
-						'is_numeric' => false,
-						'is_binary_units' => false,
-						'key_' => null,
-						'is_group_header' => true
-					];
+					$cells[] = $this->makeGroupHeaderCell($group_header_index++, $item, $group_by);
 				}
 
 				if (count($cells) < $result_limit) {
-					$cells[] = [
-						'hostid' => $item['hostid'],
-						'itemid' => $item['itemid'],
-						'group_id' => $group_key,
-						'hostname' => $item['hostname'],
-						'item_name' => $item['name'],
-						'primary_label' => $primary_label,
-						'secondary_label' => $secondary_label,
-						'value' => $last_value,
-						'is_numeric' => in_array($item['value_type'], [ITEM_VALUE_TYPE_FLOAT, ITEM_VALUE_TYPE_UINT64]),
-						'is_binary_units' => isBinaryUnits($item['units']),
-						'key_' => $item['key_']
-					];
+					$cells[] = $this->makeDataCell(
+						$item,
+						$group_by,
+						$group_key,
+						$primary_label,
+						$secondary_label,
+						$last_value,
+						$last_clock,
+						$this->getSeverityScore($item, $last_value, $config),
+						$this->getValueTrend($item, $last_value, $previous_value),
+						array_key_exists($item['itemid'], $acknowledged_problem_itemids)
+					);
 				}
 
 				$previous_group_key = $group_key;
@@ -329,7 +306,266 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
+		return $this->applyGroupSummaries($cells);
+	}
+
+	private function makeSpacerCell(int $index): array {
+		return [
+			'hostid' => null,
+			'itemid' => 'spacer-'.$index,
+			'primary_label' => '',
+			'secondary_label' => '',
+			'value' => null,
+			'is_numeric' => false,
+			'is_binary_units' => false,
+			'key_' => null,
+			'is_spacer' => true
+		];
+	}
+
+	private function makeGroupBreakCell(int $index): array {
+		return [
+			'hostid' => null,
+			'itemid' => 'group-break-'.$index,
+			'primary_label' => '',
+			'secondary_label' => '',
+			'value' => null,
+			'is_numeric' => false,
+			'is_binary_units' => false,
+			'key_' => null,
+			'is_group_break' => true
+		];
+	}
+
+	private function makeGroupHeaderCell(int $index, array $item, int $group_by): array {
+		return [
+			'hostid' => null,
+			'itemid' => 'group-header-'.$index,
+			'group_id' => $this->getGroupKey($item, $group_by),
+			'primary_label' => $this->getGroupTitle($item, $group_by),
+			'secondary_label' => '',
+			'value' => null,
+			'is_numeric' => false,
+			'is_binary_units' => false,
+			'key_' => null,
+			'is_group_header' => true
+		];
+	}
+
+	private function makeDataCell(
+		array $item,
+		int $group_by,
+		string $group_key,
+		string $primary_label,
+		string $secondary_label,
+		$last_value,
+		?int $last_clock,
+		int $severity_score,
+		array $trend,
+		bool $has_acknowledged_problem
+	): array {
+		return [
+			'hostid' => $item['hostid'],
+			'itemid' => $item['itemid'],
+			'group_id' => $group_key,
+			'group_name' => $this->getGroupTitle($item, $group_by),
+			'hostname' => $item['hostname'],
+			'item_name' => $item['name'],
+			'primary_label' => $primary_label,
+			'secondary_label' => $secondary_label,
+			'value' => $last_value,
+			'formatted_value' => formatHistoryValue($last_value, $item, false),
+			'last_clock' => $last_clock,
+			'is_numeric' => in_array($item['value_type'], [ITEM_VALUE_TYPE_FLOAT, ITEM_VALUE_TYPE_UINT64]),
+			'is_binary_units' => isBinaryUnits($item['units']),
+			'severity_score' => $severity_score,
+			'is_problem' => $severity_score > 0,
+			'is_maintenance' => ((int) ($item['hosts'][0]['maintenance_status'] ?? HOST_MAINTENANCE_STATUS_OFF))
+				== HOST_MAINTENANCE_STATUS_ON,
+			'has_acknowledged_problem' => $has_acknowledged_problem,
+			'trend' => $trend['trend'],
+			'trend_delta' => $trend['delta'],
+			'key_' => $item['key_']
+		];
+	}
+
+	private function applyGroupSummaries(array $cells): array {
+		$group_summaries = [];
+		$current_group_id = null;
+
+		foreach ($cells as $cell) {
+			if (($cell['is_group_header'] ?? false) === true) {
+				$current_group_id = (string) $cell['group_id'];
+				$group_summaries[$current_group_id] = [
+					'item_count' => 0,
+					'problem_count' => 0,
+					'worst_severity' => 0,
+					'maintenance_count' => 0,
+					'acknowledged_problem_count' => 0,
+					'trend_up_count' => 0,
+					'trend_down_count' => 0
+				];
+
+				continue;
+			}
+
+			if ($current_group_id === null || ($cell['is_spacer'] ?? false) === true
+					|| ($cell['is_group_break'] ?? false) === true) {
+				continue;
+			}
+
+			$severity_score = (int) ($cell['severity_score'] ?? 0);
+			$group_summaries[$current_group_id]['item_count']++;
+			$group_summaries[$current_group_id]['problem_count'] += $severity_score > 0 ? 1 : 0;
+			$group_summaries[$current_group_id]['maintenance_count'] += ($cell['is_maintenance'] ?? false) ? 1 : 0;
+			$group_summaries[$current_group_id]['acknowledged_problem_count'] +=
+				($cell['has_acknowledged_problem'] ?? false) ? 1 : 0;
+			$group_summaries[$current_group_id]['trend_up_count'] += ($cell['trend'] ?? '') === 'up' ? 1 : 0;
+			$group_summaries[$current_group_id]['trend_down_count'] += ($cell['trend'] ?? '') === 'down' ? 1 : 0;
+			$group_summaries[$current_group_id]['worst_severity'] = max(
+				$group_summaries[$current_group_id]['worst_severity'],
+				$severity_score
+			);
+		}
+
+		foreach ($cells as &$cell) {
+			if (($cell['is_group_header'] ?? false) !== true) {
+				continue;
+			}
+
+			$group_id = (string) $cell['group_id'];
+			$summary = $group_summaries[$group_id] ?? [
+				'item_count' => 0,
+				'problem_count' => 0,
+				'worst_severity' => 0,
+				'maintenance_count' => 0,
+				'acknowledged_problem_count' => 0,
+				'trend_up_count' => 0,
+				'trend_down_count' => 0
+			];
+
+			$cell += [
+				'group_item_count' => $summary['item_count'],
+				'group_problem_count' => $summary['problem_count'],
+				'group_worst_severity' => $summary['worst_severity'],
+				'group_maintenance_count' => $summary['maintenance_count'],
+				'group_acknowledged_problem_count' => $summary['acknowledged_problem_count'],
+				'group_trend_up_count' => $summary['trend_up_count'],
+				'group_trend_down_count' => $summary['trend_down_count']
+			];
+			$cell['secondary_label'] = $this->getGroupSummaryLabel($summary);
+		}
+		unset($cell);
+
 		return $cells;
+	}
+
+	private function getGroupSummaryLabel(array $summary): string {
+		$item_count = (int) $summary['item_count'];
+		$problem_count = (int) $summary['problem_count'];
+		$count_label = $item_count.' '.($item_count == 1 ? _('item') : _('items'));
+
+		return $problem_count > 0
+			? $count_label.' | '.$problem_count.' '.($problem_count == 1 ? _('problem') : _('problems'))
+			: $count_label.' | '._('OK');
+	}
+
+	private function getSeverityScore(array $item, $last_value, array $config): int {
+		if (!in_array($item['value_type'], [ITEM_VALUE_TYPE_FLOAT, ITEM_VALUE_TYPE_UINT64])) {
+			return 0;
+		}
+
+		$value = (float) $last_value;
+
+		if ($config['auto_color_binary']) {
+			if ($value == (float) $config['binary_problem_value']) {
+				return 100;
+			}
+
+			return 0;
+		}
+
+		$threshold_type = isBinaryUnits($item['units']) ? 'threshold_binary' : 'threshold';
+		$score = 0;
+
+		foreach ($config['thresholds'] as $threshold) {
+			if ($value >= (float) $threshold[$threshold_type]) {
+				$score++;
+			}
+		}
+
+		return $score;
+	}
+
+	private function getValueTrend(array $item, $last_value, $previous_value): array {
+		if ($previous_value === null) {
+			return [
+				'trend' => 'unknown',
+				'delta' => null
+			];
+		}
+
+		if (in_array($item['value_type'], [ITEM_VALUE_TYPE_FLOAT, ITEM_VALUE_TYPE_UINT64])) {
+			$delta = (float) $last_value - (float) $previous_value;
+
+			return [
+				'trend' => $delta > 0 ? 'up' : ($delta < 0 ? 'down' : 'flat'),
+				'delta' => $delta
+			];
+		}
+
+		return [
+			'trend' => (string) $last_value === (string) $previous_value ? 'flat' : 'changed',
+			'delta' => null
+		];
+	}
+
+	private function getAcknowledgedProblemItemIds(array $itemids): array {
+		$itemids = array_values(array_unique(array_filter($itemids)));
+
+		if (!$itemids) {
+			return [];
+		}
+
+		try {
+			$triggers = API::Trigger()->get([
+				'output' => ['triggerid'],
+				'itemids' => $itemids,
+				'filter' => [
+					'value' => defined('TRIGGER_VALUE_TRUE') ? constant('TRIGGER_VALUE_TRUE') : 1
+				],
+				'selectItems' => ['itemid'],
+				'preservekeys' => true
+			]);
+
+			if (!$triggers) {
+				return [];
+			}
+
+			$problems = API::Problem()->get([
+				'output' => ['objectid', 'acknowledged'],
+				'objectids' => array_keys($triggers),
+				'source' => defined('EVENT_SOURCE_TRIGGERS') ? constant('EVENT_SOURCE_TRIGGERS') : 0,
+				'object' => defined('EVENT_OBJECT_TRIGGER') ? constant('EVENT_OBJECT_TRIGGER') : 0
+			]);
+		}
+		catch (\Throwable $exception) {
+			return [];
+		}
+
+		$acknowledged_itemids = [];
+
+		foreach ($problems as $problem) {
+			if ((int) ($problem['acknowledged'] ?? 0) !== 1) {
+				continue;
+			}
+
+			foreach ($triggers[$problem['objectid']]['items'] ?? [] as $item) {
+				$acknowledged_itemids[$item['itemid']] = true;
+			}
+		}
+
+		return $acknowledged_itemids;
 	}
 
 	private function getCellLabel(array $item, $last_value, array $context_fields_values): string {
@@ -422,6 +658,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 	private function getGroupKey(array $item, int $group_by): string {
 		switch ($group_by) {
+			case WidgetForm::GROUP_BY_NONE:
+				return '';
+
 			case WidgetForm::GROUP_BY_HOSTGROUP:
 				return $item['hostgroup_names'];
 
@@ -455,7 +694,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'bg_color' => $this->fields_values['bg_color'],
 			'force_show_all' => ($this->fields_values['force_show_all'] ?? 0) == 1,
 			'collapse_groups_on_load' => ($this->fields_values['collapse_groups_on_load'] ?? 0) == 1,
-			'drilldown_new_tab' => ($this->fields_values['drilldown_new_tab'] ?? 1) == 1
+			'collapse_persistence' => (int) ($this->fields_values['collapse_persistence']
+				?? WidgetForm::COLLAPSE_PERSISTENCE_SESSION),
+			'drilldown_new_tab' => ($this->fields_values['drilldown_new_tab'] ?? 1) == 1,
+			'show_filter' => ($this->fields_values['show_filter'] ?? 0) == 1,
+			'show_legend' => ($this->fields_values['show_legend'] ?? 0) == 1,
+			'group_sort' => (int) ($this->fields_values['group_sort'] ?? WidgetForm::GROUP_SORT_NAME),
+			'cell_sort' => (int) ($this->fields_values['cell_sort'] ?? WidgetForm::CELL_SORT_DEFAULT)
 		];
 
 		$show = array_flip($this->fields_values['show']);
@@ -465,7 +710,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'show' => true,
 				'is_custom_size' => $this->fields_values['primary_label_size_type'] == WidgetForm::LABEL_SIZE_CUSTOM,
 				'is_bold' => $this->fields_values['primary_label_bold'] == 1,
-				'color' => $this->fields_values['primary_label_color']
+				'color' => $this->normalizeColor($this->fields_values['primary_label_color'])
 			];
 
 			if ($this->fields_values['primary_label_size_type'] == WidgetForm::LABEL_SIZE_CUSTOM) {
@@ -481,7 +726,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'show' => true,
 				'is_custom_size' => $this->fields_values['secondary_label_size_type'] == WidgetForm::LABEL_SIZE_CUSTOM,
 				'is_bold' => $this->fields_values['secondary_label_bold'] == 1,
-				'color' => $this->fields_values['secondary_label_color']
+				'color' => $this->normalizeColor($this->fields_values['secondary_label_color'])
 			];
 
 			if ($this->fields_values['secondary_label_size_type'] == WidgetForm::LABEL_SIZE_CUSTOM) {
@@ -495,8 +740,17 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$config['apply_interpolation'] = $this->fields_values['interpolation'] == 1;
 		$config['thresholds'] = $this->fields_values['thresholds'];
 		$config['auto_color_binary'] = ($this->fields_values['auto_color_binary'] ?? 0) == 1;
-		$config['auto_color_zero'] = strtoupper(ltrim((string) ($this->fields_values['auto_color_zero'] ?? 'FF465C'), '#'));
-		$config['auto_color_one'] = strtoupper(ltrim((string) ($this->fields_values['auto_color_one'] ?? '0EC9AC'), '#'));
+		$config['binary_problem_value'] = (int) ($this->fields_values['binary_problem_value']
+			?? WidgetForm::BINARY_ZERO_PROBLEM);
+		$config['bg_color'] = $this->normalizeColor($config['bg_color']);
+		$config['auto_color_zero'] = $this->normalizeColor(
+			$this->fields_values['auto_color_zero'] ?? 'FF465C',
+			'FF465C'
+		);
+		$config['auto_color_one'] = $this->normalizeColor(
+			$this->fields_values['auto_color_one'] ?? '0EC9AC',
+			'0EC9AC'
+		);
 
 		$number_parser = new CNumberParser([
 			'with_size_suffix' => true,
@@ -511,6 +765,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 		]);
 
 		foreach ($config['thresholds'] as &$threshold) {
+			$threshold['color'] = $this->normalizeColor($threshold['color'] ?? '');
+
 			$number_parser_binary->parse($threshold['threshold']);
 			$threshold['threshold_binary'] = $number_parser_binary->calcValue();
 
@@ -519,15 +775,21 @@ class WidgetView extends CControllerDashboardWidgetView {
 		}
 		unset($threshold);
 
-		if ($config['auto_color_zero'] === '') {
-			$config['auto_color_zero'] = 'FF465C';
-		}
-
-		if ($config['auto_color_one'] === '') {
-			$config['auto_color_one'] = '0EC9AC';
-		}
+		$config['thresholds'] = array_values(array_filter($config['thresholds'],
+			static function (array $threshold): bool {
+				return $threshold['color'] !== '';
+			}
+		));
 
 		return $config;
+	}
+
+	private function normalizeColor($color, string $fallback = ''): string {
+		$color = strtoupper(ltrim(trim((string) $color), '#'));
+
+		return preg_match('/^[0-9A-F]{6}$/', $color) === 1
+			? $color
+			: $fallback;
 	}
 
 }

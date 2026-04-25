@@ -43,6 +43,7 @@
 		}
 	},
 	"assets": {
+		"css": ["better-honeycomb.css"],
 		"js": ["class.svghoneycomb.js", "class.widget.js"]
 	}
 }

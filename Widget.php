@@ -27,11 +27,16 @@ class Widget extends CWidget {
 	public function getTranslationStrings(): array {
 		return [
 			'class.svghoneycomb.js' => [
-				'No data' => _('No data')
+				'No data' => _('No data'),
+				'More honeycombs are available' => _('More honeycombs are available')
 			],
 			'class.widget.js' => [
 				'Actions' => _('Actions'),
-				'Download image' => _('Download image')
+				'Download image' => _('Download image'),
+				'Filter honeycombs' => _('Filter honeycombs'),
+				'Honeycomb color legend' => _('Honeycomb color legend'),
+				'Value 0' => _('Value 0'),
+				'Value 1' => _('Value 1')
 			]
 		];
 	}

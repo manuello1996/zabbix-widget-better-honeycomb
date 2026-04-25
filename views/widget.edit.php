@@ -70,7 +70,22 @@ $form
 		new CWidgetFieldCheckBoxView($data['fields']['collapse_groups_on_load'])
 	)
 	->addField(
+		new CWidgetFieldSelectView($data['fields']['collapse_persistence'])
+	)
+	->addField(
 		new CWidgetFieldCheckBoxView($data['fields']['force_show_all'])
+	)
+	->addField(
+		new CWidgetFieldCheckBoxView($data['fields']['show_filter'])
+	)
+	->addField(
+		new CWidgetFieldCheckBoxView($data['fields']['show_legend'])
+	)
+	->addField(
+		new CWidgetFieldSelectView($data['fields']['group_sort'])
+	)
+	->addField(
+		new CWidgetFieldSelectView($data['fields']['cell_sort'])
 	)
 	->addField(
 		new CWidgetFieldCheckBoxView($data['fields']['drilldown_new_tab'])
@@ -203,6 +218,7 @@ function getLabelFieldsGroupView(CWidgetFormView $form, string $group_label, arr
 function getThresholdFieldsGroupView(CWidgetFormView $form, array $fields): CWidgetFieldsGroupView {
 	$color_interpolation_field = $form->registerField(new CWidgetFieldCheckBoxView($fields['interpolation']));
 	$auto_color_binary_field = $form->registerField(new CWidgetFieldCheckBoxView($fields['auto_color_binary']));
+	$binary_problem_value_field = $form->registerField(new CWidgetFieldSelectView($fields['binary_problem_value']));
 	$auto_color_zero_field = $form->registerField(new CWidgetFieldColorView($fields['auto_color_zero']));
 	$auto_color_one_field = $form->registerField(new CWidgetFieldColorView($fields['auto_color_one']));
 
@@ -218,6 +234,9 @@ function getThresholdFieldsGroupView(CWidgetFormView $form, array $fields): CWid
 			(new CDiv([$auto_color_binary_field->getView(), $auto_color_binary_field->getLabel()]))
 				->addClass('form-row-auto-color-binary')
 		])
+		->addField(
+			$binary_problem_value_field->addRowClass('js-binary-problem-value')
+		)
 		->addField(
 			$auto_color_zero_field->addRowClass('js-auto-color-zero')
 		)

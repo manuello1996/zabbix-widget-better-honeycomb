@@ -74,6 +74,36 @@ class CWidgetBetterHoneycomb extends CWidget {
 	#last_config = {};
 
 	/**
+	 * @type {string}
+	 */
+	#filter_text = '';
+
+	/**
+	 * @type {HTMLDivElement|null}
+	 */
+	#toolbar = null;
+
+	/**
+	 * @type {HTMLInputElement|null}
+	 */
+	#filter_input = null;
+
+	/**
+	 * @type {HTMLDivElement|null}
+	 */
+	#legend = null;
+
+	/**
+	 * @type {HTMLDivElement|null}
+	 */
+	#warning = null;
+
+	/**
+	 * @type {number}
+	 */
+	#filter_update_timeout_id;
+
+	/**
 	 * Cells data from the request.
 	 *
 	 * @type {Map<string, Object>}
@@ -107,6 +137,7 @@ class CWidgetBetterHoneycomb extends CWidget {
 
 	onDeactivate() {
 		clearTimeout(this.#resize_timeout_id);
+		clearTimeout(this.#filter_update_timeout_id);
 	}
 
 	isUserInteracting() {
@@ -150,7 +181,16 @@ class CWidgetBetterHoneycomb extends CWidget {
 			bg_color: '',
 			force_show_all: this.#force_show_all,
 			collapse_groups_on_load: false,
+			collapse_persistence: 0,
 			drilldown_new_tab: true,
+			show_filter: false,
+			show_legend: false,
+			has_more: false,
+			force_show_all_limit: 5000,
+			compact_rendering_threshold: 1500,
+			group_sort: 0,
+			cell_sort: 0,
+			binary_problem_value: 0,
 			auto_color_binary: false,
 			auto_color_zero: 'FF465C',
 			auto_color_one: '0EC9AC',
@@ -233,6 +273,9 @@ class CWidgetBetterHoneycomb extends CWidget {
 
 		this.#last_cells = cells;
 		this.#last_config = config;
+		this.#updateToolbar();
+		this.#updateLegend();
+		this.#updateWarning();
 		this.#initializeCollapsedGroups();
 		this.#renderCurrentState();
 
@@ -312,6 +355,111 @@ class CWidgetBetterHoneycomb extends CWidget {
 		selectable_cells.forEach(cell => this.#cells_data.set(cell.itemid, cell));
 	}
 
+	#updateToolbar() {
+		const show_filter = this.#last_config?.show_filter === true;
+
+		if (!show_filter) {
+			this.#toolbar?.remove();
+			this.#toolbar = null;
+			this.#filter_input = null;
+			this.#filter_text = '';
+
+			return;
+		}
+
+		if (this.#toolbar === null) {
+			this.#toolbar = document.createElement('div');
+			this.#toolbar.className = 'better-honeycomb-toolbar';
+
+			this.#filter_input = document.createElement('input');
+			this.#filter_input.type = 'search';
+			this.#filter_input.placeholder = t('Filter honeycombs');
+			this.#filter_input.setAttribute('aria-label', t('Filter honeycombs'));
+			this.#filter_input.value = this.#filter_text;
+			this.#filter_input.className = 'better-honeycomb-filter';
+			this.#filter_input.addEventListener('input', () => {
+				this.#filter_text = this.#filter_input.value.trim().toLocaleLowerCase();
+				clearTimeout(this.#filter_update_timeout_id);
+				this.#filter_update_timeout_id = setTimeout(() => this.#renderCurrentState(), 100);
+			});
+
+			this.#toolbar.append(this.#filter_input);
+			this._body.prepend(this.#toolbar);
+		}
+	}
+
+	#updateLegend() {
+		const show_legend = this.#last_config?.show_legend === true;
+
+		if (!show_legend) {
+			this.#legend?.remove();
+			this.#legend = null;
+
+			return;
+		}
+
+		if (this.#legend === null) {
+			this.#legend = document.createElement('div');
+			this.#legend.className = 'better-honeycomb-legend';
+			this.#legend.setAttribute('aria-label', t('Honeycomb color legend'));
+			this._body.append(this.#legend);
+		}
+
+		this.#legend.replaceChildren(...this.#getLegendItems().map(item => {
+			const label = document.createElement('span');
+			const swatch = document.createElement('span');
+			const text = document.createElement('span');
+
+			label.className = 'better-honeycomb-legend-item';
+			swatch.className = 'better-honeycomb-legend-swatch';
+			swatch.style.setProperty('--better-honeycomb-legend-color', `#${item.color}`);
+			text.textContent = item.label;
+			label.append(swatch, text);
+
+			return label;
+		}));
+	}
+
+	#getLegendItems() {
+		const items = [];
+
+		if (this.#last_config?.auto_color_binary === true) {
+			items.push(
+				{color: this.#last_config.auto_color_zero, label: t('Value 0')},
+				{color: this.#last_config.auto_color_one, label: t('Value 1')}
+			);
+		}
+
+		for (const threshold of this.#last_config?.thresholds ?? []) {
+			if (threshold.color !== undefined && `${threshold.threshold}` !== '') {
+				items.push({color: threshold.color, label: `>= ${threshold.threshold}`});
+			}
+		}
+
+		return items;
+	}
+
+	#updateWarning() {
+		const has_more = this.#last_config?.has_more === true;
+
+		if (!has_more) {
+			this.#warning?.remove();
+			this.#warning = null;
+
+			return;
+		}
+
+		if (this.#warning === null) {
+			this.#warning = document.createElement('div');
+			this.#warning.className = 'better-honeycomb-warning';
+			this.#warning.setAttribute('role', 'status');
+			this._body.append(this.#warning);
+		}
+
+		this.#warning.textContent = `Showing first ${this.#last_config.force_show_all_limit} honeycombs. ` +
+			'Refine filters to reduce the result set.';
+	}
+
 	#initializeCollapsedGroups() {
 		const group_ids = this.#collectGroupIds(this.#last_cells);
 
@@ -375,8 +523,15 @@ class CWidgetBetterHoneycomb extends CWidget {
 	}
 
 	#loadCollapsedGroupsFromSession() {
+		if (Number(this.#last_config?.collapse_persistence ?? 0) === 2) {
+			return null;
+		}
+
 		try {
-			const raw = sessionStorage.getItem(this.#getCollapsedGroupsStorageKey());
+			const storage = Number(this.#last_config?.collapse_persistence ?? 0) === 1
+				? localStorage
+				: sessionStorage;
+			const raw = storage.getItem(this.#getCollapsedGroupsStorageKey());
 
 			if (raw === null) {
 				return null;
@@ -406,6 +561,10 @@ class CWidgetBetterHoneycomb extends CWidget {
 	}
 
 	#saveCollapsedGroupsToSession(group_ids = null) {
+		if (Number(this.#last_config?.collapse_persistence ?? 0) === 2) {
+			return;
+		}
+
 		try {
 			const known_group_ids = group_ids ?? this.#collectGroupIds(this.#last_cells);
 
@@ -413,7 +572,11 @@ class CWidgetBetterHoneycomb extends CWidget {
 				return;
 			}
 
-			sessionStorage.setItem(this.#getCollapsedGroupsStorageKey(), JSON.stringify({
+			const storage = Number(this.#last_config?.collapse_persistence ?? 0) === 1
+				? localStorage
+				: sessionStorage;
+
+			storage.setItem(this.#getCollapsedGroupsStorageKey(), JSON.stringify({
 				collapsed: [...this.#collapsed_groups],
 				known: known_group_ids
 			}));
@@ -423,53 +586,204 @@ class CWidgetBetterHoneycomb extends CWidget {
 	}
 
 	#prepareCellsForRender(cells) {
-		const group_children = new Map();
-		let current_group_id = null;
+		const has_groups = cells.some(cell => cell.is_group_header === true);
+
+		if (!has_groups) {
+			return this.#sortCells(cells
+				.filter(cell => this.#matchesFilter(cell))
+				.map(cell => ({...cell}))
+			);
+		}
+
+		const segments = [];
+		let current = null;
 
 		for (const cell of cells) {
 			if (cell.is_group_header === true) {
-				current_group_id = cell.group_id ?? null;
-
-				if (current_group_id !== null && !group_children.has(current_group_id)) {
-					group_children.set(current_group_id, []);
-				}
-
+				current = {
+					header: {...cell},
+					children: []
+				};
+				segments.push(current);
 				continue;
 			}
 
-			if (current_group_id !== null && cell.is_spacer !== true && cell.is_group_break !== true) {
-				group_children.get(current_group_id)?.push(cell);
+			if (current !== null && cell.is_spacer !== true && cell.is_group_break !== true) {
+				current.children.push({...cell});
 			}
 		}
 
 		const rendered = [];
-		let header_group_id = null;
+		const has_group_breaks = cells.some(cell => cell.is_group_break === true);
+		const has_group_spacers = cells.some(cell => cell.is_spacer === true && cell.is_layout_spacer !== true);
+		let segment_index = 0;
 
-		for (const original of cells) {
-			const cell = {...original};
+		for (const segment of this.#sortGroupSegments(segments)) {
+			const children = this.#sortCells(segment.children.filter(cell => this.#matchesFilter(cell)));
 
-			if (cell.is_group_header === true) {
-				header_group_id = cell.group_id ?? null;
-				cell.group_children = header_group_id !== null
-					? (group_children.get(header_group_id) ?? [])
-					: [];
-				cell.is_collapsed = header_group_id !== null && this.#collapsed_groups.has(header_group_id);
-				rendered.push(cell);
+			if (children.length === 0 && this.#filter_text !== '') {
 				continue;
 			}
 
-			if (header_group_id !== null && this.#collapsed_groups.has(header_group_id)) {
-				if (cell.is_group_break === true || cell.is_spacer === true) {
-					continue;
-				}
+			const header = segment.header;
+			const group_id = header.group_id ?? null;
+			const is_collapsed = group_id !== null && this.#collapsed_groups.has(group_id);
 
-				continue;
+			header.group_children = children;
+			header.is_collapsed = is_collapsed;
+
+			if (this.#filter_text !== '' || header.group_item_count === undefined) {
+				header.secondary_label = this.#getGroupSummaryLabel(children);
+				header.group_problem_count = this.#getProblemCount(children);
+				header.group_worst_severity = this.#getWorstSeverity(children);
+				header.group_maintenance_count = children.filter(cell => cell.is_maintenance === true).length;
+				header.group_acknowledged_problem_count =
+					children.filter(cell => cell.has_acknowledged_problem === true).length;
+				header.group_trend_up_count = children.filter(cell => cell.trend === 'up').length;
+				header.group_trend_down_count = children.filter(cell => cell.trend === 'down').length;
 			}
 
-			rendered.push(cell);
+			if (rendered.length > 0 && has_group_spacers) {
+				rendered.push({
+					itemid: `client-spacer-${segment_index}`,
+					is_spacer: true
+				});
+			}
+
+			if (rendered.length > 0 && has_group_breaks) {
+				rendered.push({
+					itemid: `client-group-break-${segment_index}`,
+					is_group_break: true
+				});
+			}
+
+			rendered.push(header);
+
+			if (!is_collapsed) {
+				rendered.push(...children);
+			}
+
+			segment_index++;
 		}
 
 		return rendered;
+	}
+
+	#matchesFilter(cell) {
+		if (this.#filter_text === '' || cell.is_spacer === true || cell.is_group_break === true) {
+			return true;
+		}
+
+		return [
+			cell.hostname,
+			cell.item_name,
+			cell.key_,
+			cell.primary_label,
+			cell.secondary_label,
+			cell.group_name,
+			cell.formatted_value,
+			cell.value
+		]
+			.some(value => `${value ?? ''}`.toLocaleLowerCase().includes(this.#filter_text));
+	}
+
+	#sortGroupSegments(segments) {
+		const group_sort = Number(this.#last_config?.group_sort ?? 0);
+
+		if (group_sort === 0) {
+			return segments;
+		}
+
+		return [...segments].sort((left, right) => {
+			const left_score = group_sort === 1
+				? Number(left.header.group_worst_severity ?? this.#getWorstSeverity(left.children))
+				: Number(left.header.group_problem_count ?? this.#getProblemCount(left.children));
+			const right_score = group_sort === 1
+				? Number(right.header.group_worst_severity ?? this.#getWorstSeverity(right.children))
+				: Number(right.header.group_problem_count ?? this.#getProblemCount(right.children));
+
+			if (left_score !== right_score) {
+				return right_score - left_score;
+			}
+
+			return `${left.header.primary_label}`.localeCompare(`${right.header.primary_label}`);
+		});
+	}
+
+	#sortCells(cells) {
+		const cell_sort = Number(this.#last_config?.cell_sort ?? 0);
+
+		if (cell_sort === 0) {
+			return cells;
+		}
+
+		return [...cells].sort((left, right) => {
+			if (cell_sort === 1) {
+				const severity_delta =
+					Number(right.severity_score ?? this.#getSeverityScore(right))
+					- Number(left.severity_score ?? this.#getSeverityScore(left));
+
+				if (severity_delta !== 0) {
+					return severity_delta;
+				}
+			}
+			else {
+				const left_value = Number.parseFloat(left.value);
+				const right_value = Number.parseFloat(right.value);
+
+				if (Number.isFinite(left_value) && Number.isFinite(right_value) && left_value !== right_value) {
+					return cell_sort === 2 ? left_value - right_value : right_value - left_value;
+				}
+			}
+
+			return `${left.hostname} ${left.item_name}`.localeCompare(`${right.hostname} ${right.item_name}`);
+		});
+	}
+
+	#getGroupSummaryLabel(children) {
+		const problem_count = this.#getProblemCount(children);
+		const count_label = `${children.length} ${children.length === 1 ? 'item' : 'items'}`;
+
+		return problem_count > 0
+			? `${count_label} | ${problem_count} problem${problem_count === 1 ? '' : 's'}`
+			: `${count_label} | OK`;
+	}
+
+	#getProblemCount(cells) {
+		return cells.filter(cell => Number(cell.severity_score ?? this.#getSeverityScore(cell)) > 0).length;
+	}
+
+	#getWorstSeverity(cells) {
+		return cells.reduce(
+			(severity, cell) => Math.max(severity, Number(cell.severity_score ?? this.#getSeverityScore(cell))),
+			0
+		);
+	}
+
+	#getSeverityScore(cell) {
+		if (this.#last_config?.auto_color_binary === true && cell.is_numeric) {
+			const value = Number.parseFloat(cell.value);
+			const problem_value = Number(this.#last_config.binary_problem_value ?? 0);
+
+			if (Number.isFinite(value)) {
+				return value === problem_value ? 100 : 0;
+			}
+		}
+
+		if (!cell.is_numeric) {
+			return 0;
+		}
+
+		const value = Number.parseFloat(cell.value);
+		const threshold_type = cell.is_binary_units ? 'threshold_binary' : 'threshold';
+
+		if (!Number.isFinite(value)) {
+			return 0;
+		}
+
+		return (this.#last_config?.thresholds ?? [])
+			.filter(threshold => value >= Number(threshold[threshold_type]))
+			.length;
 	}
 
 	#openDrilldown(cell) {
@@ -513,6 +827,8 @@ class CWidgetBetterHoneycomb extends CWidget {
 	}
 
 	onClearContents() {
+		clearTimeout(this.#filter_update_timeout_id);
+
 		if (this.#honeycomb !== null) {
 			this.#honeycomb.destroy();
 			this.#honeycomb = null;
@@ -561,7 +877,7 @@ class CWidgetBetterHoneycomb extends CWidget {
 			label: t('Download image'),
 			disabled: this.#honeycomb === null,
 			clickCallback: () => {
-				downloadSvgImage(this.#honeycomb.getSVGElement(), 'image.png');
+				downloadSvgImage(this.#honeycomb.getSVGElement(), `${this.#getExportBaseName()}.png`);
 			}
 		});
 
@@ -570,6 +886,16 @@ class CWidgetBetterHoneycomb extends CWidget {
 
 	hasPadding() {
 		return false;
+	}
+
+	#getExportBaseName() {
+		const date = new Date().toISOString().slice(0, 10);
+		const name = `${this.getName?.() ?? 'better-honeycomb'}`
+			.toLocaleLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-|-$/g, '') || 'better-honeycomb';
+
+		return `${name}-${date}`;
 	}
 
 	#getItemsMaxCount() {

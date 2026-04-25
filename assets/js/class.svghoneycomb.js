@@ -27,10 +27,17 @@ class CSVGBetterHoneycomb {
 	static ZBX_STYLE_CELL_SHADOW =			'svg-honeycomb-cell-shadow';
 	static ZBX_STYLE_CELL_GROUP_HEADER =	'svg-honeycomb-cell-group-header';
 	static ZBX_STYLE_CELL_SPACER =			'svg-honeycomb-cell-spacer';
+	static ZBX_STYLE_CELL_MAINTENANCE =	'svg-honeycomb-cell-maintenance';
+	static ZBX_STYLE_CELL_ACKNOWLEDGED =	'svg-honeycomb-cell-acknowledged';
+	static ZBX_STYLE_CELL_TREND_UP =		'svg-honeycomb-cell-trend-up';
+	static ZBX_STYLE_CELL_TREND_DOWN =		'svg-honeycomb-cell-trend-down';
 	static ZBX_STYLE_CELL_OTHER =			'svg-honeycomb-cell-other';
 	static ZBX_STYLE_CELL_OTHER_ELLIPSIS =	'svg-honeycomb-cell-other-ellipsis';
 	static ZBX_STYLE_CONTENT =				'svg-honeycomb-content';
 	static ZBX_STYLE_BACKDROP =				'svg-honeycomb-backdrop';
+	static ZBX_STYLE_INDICATORS =			'svg-honeycomb-indicators';
+	static ZBX_STYLE_GROUP_BADGE =			'svg-honeycomb-group-badge';
+	static ZBX_STYLE_GROUP_CHEVRON =		'svg-honeycomb-group-chevron';
 	static ZBX_STYLE_LABEL =				'svg-honeycomb-label';
 	static ZBX_STYLE_LABEL_PRIMARY =		'svg-honeycomb-label-primary';
 	static ZBX_STYLE_LABEL_SECONDARY =		'svg-honeycomb-label-secondary';
@@ -207,6 +214,7 @@ class CSVGBetterHoneycomb {
 		this.#svg = d3.create('svg')
 			.attr('id', this.#svg_id)
 			.attr('class', CSVGBetterHoneycomb.ZBX_STYLE_CLASS)
+			.attr('role', 'list')
 			// Add filter element for shadow of popped cell.
 			.call(svg => svg
 				.append('defs')
@@ -298,6 +306,7 @@ class CSVGBetterHoneycomb {
 
 				d3.select(cells[i])
 					.classed(CSVGBetterHoneycomb.ZBX_STYLE_CELL_SELECTED, selected)
+					.attr('aria-selected', d.is_group_header === true || d.is_spacer === true ? null : `${selected}`)
 					.style('--stroke-selected', d => this.#getStrokeColor(d, selected))
 			});
 
@@ -387,6 +396,8 @@ class CSVGBetterHoneycomb {
 		let data;
 		const layout_cells = this.#getLayoutCells(this.#cells_data ?? []);
 		const force_show_all = this.#config?.force_show_all === true;
+		const compact_rendering = force_show_all
+			&& layout_cells.length > Number(this.#config?.compact_rendering_threshold ?? 1500);
 
 		if (force_show_all) {
 			data = layout_cells;
@@ -423,7 +434,12 @@ class CSVGBetterHoneycomb {
 		}
 
 		this.#calculateLabelsParams(
-			data.filter(d => d.has_more !== true && d.no_data !== true && d.is_spacer !== true),
+			data.filter(d =>
+				d.has_more !== true
+				&& d.no_data !== true
+				&& d.is_spacer !== true
+				&& (!compact_rendering || d.is_group_header === true)
+			),
 			this.#cell_width - this.#cells_gap, this.#cell_height / 2.25
 		);
 
@@ -453,6 +469,7 @@ class CSVGBetterHoneycomb {
 					.append('g')
 					.attr('class', CSVGBetterHoneycomb.ZBX_STYLE_CELL)
 					.attr('data-index', d => d.index)
+					.call(cell => this.#applyCellStateClasses(cell))
 					.style('--x', d => `${d.position.x}px`)
 					.style('--y', d => `${d.position.y}px`)
 					.style('--fill', d => this.#getFillColor(d))
@@ -476,12 +493,16 @@ class CSVGBetterHoneycomb {
 						else if (d.is_group_header === true) {
 							this.#drawCellGroupHeader(cell);
 						}
+						else if (compact_rendering) {
+							this.#drawCompactCell(cell);
+						}
 						else {
 							this.#drawCell(cell);
 						}
 					}),
 				update => update
 					.attr('data-index', d => d.index)
+					.call(cell => this.#applyCellStateClasses(cell))
 					.style('--x', d => `${d.position.x}px`)
 					.style('--y', d => `${d.position.y}px`)
 					.style('--fill', d => this.#getFillColor(d))
@@ -496,9 +517,15 @@ class CSVGBetterHoneycomb {
 							this.#drawCellSpacer(cell);
 						}
 						else if (d.is_group_header === true) {
+							this.#drawTitle(cell);
 							this.#drawCellGroupHeader(cell);
 						}
+						else if (compact_rendering && d.has_more !== true) {
+							this.#drawCompactCell(cell);
+						}
 						else if (d.has_more !== true) {
+							this.#drawTitle(cell);
+							this.#drawCellIndicators(cell);
 							this.#drawLabel(cell);
 						}
 
@@ -561,6 +588,22 @@ class CSVGBetterHoneycomb {
 		return layout_cells;
 	}
 
+	#applyCellStateClasses(cell) {
+		cell
+			.classed(CSVGBetterHoneycomb.ZBX_STYLE_CELL_MAINTENANCE, d =>
+				d.is_maintenance === true || Number(d.group_maintenance_count ?? 0) > 0
+			)
+			.classed(CSVGBetterHoneycomb.ZBX_STYLE_CELL_ACKNOWLEDGED, d =>
+				d.has_acknowledged_problem === true || Number(d.group_acknowledged_problem_count ?? 0) > 0
+			)
+			.classed(CSVGBetterHoneycomb.ZBX_STYLE_CELL_TREND_UP, d =>
+				d.trend === 'up' || Number(d.group_trend_up_count ?? 0) > Number(d.group_trend_down_count ?? 0)
+			)
+			.classed(CSVGBetterHoneycomb.ZBX_STYLE_CELL_TREND_DOWN, d =>
+				d.trend === 'down' || Number(d.group_trend_down_count ?? 0) > Number(d.group_trend_up_count ?? 0)
+			);
+	}
+
 	/**
 	 * Draw "has more" cell that indicates that all cells do not fit in available space in widget.
 	 *
@@ -569,6 +612,8 @@ class CSVGBetterHoneycomb {
 	#drawCellHasMore(cell) {
 		cell
 			.classed(CSVGBetterHoneycomb.ZBX_STYLE_CELL_OTHER, true)
+			.attr('role', 'status')
+			.attr('aria-label', t('More honeycombs are available'))
 			.append('g')
 			.attr('class', CSVGBetterHoneycomb.ZBX_STYLE_CELL_OTHER_ELLIPSIS)
 			.call(ellipsis => {
@@ -587,6 +632,8 @@ class CSVGBetterHoneycomb {
 	#drawCellNoData(cell) {
 		cell
 			.classed(CSVGBetterHoneycomb.ZBX_STYLE_CELL_NO_DATA, true)
+			.attr('role', 'status')
+			.attr('aria-label', t('No data'))
 			.call(cell => this.#drawNoDataLabel(cell));
 	}
 
@@ -596,13 +643,21 @@ class CSVGBetterHoneycomb {
 	#drawCellSpacer(cell) {
 		cell
 			.classed(CSVGBetterHoneycomb.ZBX_STYLE_CELL_SPACER, true)
+			.attr('aria-hidden', 'true')
+			.attr('tabindex', null)
+			.attr('role', null)
+			.attr('aria-label', null)
 			.on('click', null)
+			.on('keydown', null)
 			.on('mouseenter', null)
 			.on('mouseleave', null)
 			.style('--fill', 'transparent')
 			.style('--stroke', 'transparent')
 			.style('--stroke-selected', 'transparent')
 			.style('pointer-events', 'none')
+			.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_INDICATORS}`)?.remove())
+			.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_GROUP_BADGE}`)?.remove())
+			.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_GROUP_CHEVRON}`)?.remove())
 			.call(cell => cell.select('foreignObject')?.remove())
 			.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_BACKDROP}`)?.remove());
 	}
@@ -613,7 +668,25 @@ class CSVGBetterHoneycomb {
 	#drawCellGroupHeader(cell) {
 		cell
 			.classed(CSVGBetterHoneycomb.ZBX_STYLE_CELL_GROUP_HEADER, true)
+			.call(cell => this.#drawTitle(cell))
+			.attr('role', 'button')
+			.attr('tabindex', 0)
+			.attr('aria-expanded', d => d.is_collapsed === true ? 'false' : 'true')
+			.attr('aria-label', d => `${d.primary_label}. ${d.secondary_label}. Press Enter to toggle group.`)
+			.call(cell => this.#drawGroupHeaderChrome(cell))
 			.on('click', (e, d) => {
+				this.#svg.dispatch(CSVGBetterHoneycomb.EVENT_GROUP_HEADER_CLICK, {
+					detail: {
+						group_id: d.group_id ?? null
+					}
+				});
+			})
+			.on('keydown', (e, d) => {
+				if (e.key !== 'Enter' && e.key !== ' ') {
+					return;
+				}
+
+				e.preventDefault();
 				this.#svg.dispatch(CSVGBetterHoneycomb.EVENT_GROUP_HEADER_CLICK, {
 					detail: {
 						group_id: d.group_id ?? null
@@ -673,8 +746,29 @@ class CSVGBetterHoneycomb {
 
 	#drawCell(cell) {
 		cell
+			.call(cell => this.#drawTitle(cell))
 			.call(cell => this.#drawLabel(cell))
+			.attr('role', 'button')
+			.attr('tabindex', 0)
+			.attr('aria-label', d => this.#getCellAriaLabel(d))
+			.call(cell => this.#drawCellIndicators(cell))
 			.on('click', (e, d) => {
+				if (this.selectCell(d.itemid)) {
+					this.#svg.dispatch(CSVGBetterHoneycomb.EVENT_CELL_CLICK, {
+						detail: {
+							hostid: d.hostid,
+							itemid: d.itemid
+						}
+					});
+				}
+			})
+			.on('keydown', (e, d) => {
+				if (e.key !== 'Enter' && e.key !== ' ') {
+					return;
+				}
+
+				e.preventDefault();
+
 				if (this.selectCell(d.itemid)) {
 					this.#svg.dispatch(CSVGBetterHoneycomb.EVENT_CELL_CLICK, {
 						detail: {
@@ -1176,6 +1270,190 @@ class CSVGBetterHoneycomb {
 		return `#${curr.color}`;
 	}
 
+	#drawCompactCell(cell) {
+		cell
+			.call(cell => this.#drawTitle(cell))
+			.attr('role', 'button')
+			.attr('tabindex', 0)
+			.attr('aria-label', d => this.#getCellAriaLabel(d))
+			.call(cell => this.#drawCellIndicators(cell))
+			.call(cell => cell.select('foreignObject')?.remove())
+			.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_BACKDROP}`)?.remove())
+			.on('click', (e, d) => {
+				if (this.selectCell(d.itemid)) {
+					this.#svg.dispatch(CSVGBetterHoneycomb.EVENT_CELL_CLICK, {
+						detail: {
+							hostid: d.hostid,
+							itemid: d.itemid
+						}
+					});
+				}
+			})
+			.on('keydown', (e, d) => {
+				if (e.key !== 'Enter' && e.key !== ' ') {
+					return;
+				}
+
+				e.preventDefault();
+
+				if (this.selectCell(d.itemid)) {
+					this.#svg.dispatch(CSVGBetterHoneycomb.EVENT_CELL_CLICK, {
+						detail: {
+							hostid: d.hostid,
+							itemid: d.itemid
+						}
+					});
+				}
+			})
+			.on('mouseenter', null)
+			.on('mouseleave', null);
+	}
+
+	#drawCellIndicators(cell) {
+		cell.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_INDICATORS}`)?.remove());
+
+		cell
+			.filter(d =>
+				d.is_maintenance === true
+				|| d.has_acknowledged_problem === true
+				|| Number(d.group_maintenance_count ?? 0) > 0
+				|| Number(d.group_acknowledged_problem_count ?? 0) > 0
+				|| Number(d.group_trend_up_count ?? 0) > 0
+				|| Number(d.group_trend_down_count ?? 0) > 0
+				|| ['up', 'down', 'flat', 'changed'].includes(d.trend)
+			)
+			.append('g')
+			.attr('class', CSVGBetterHoneycomb.ZBX_STYLE_INDICATORS)
+			.each((d, i, cells) => {
+				const indicators = d3.select(cells[i]);
+				const entries = [];
+
+				if (d.is_maintenance === true || Number(d.group_maintenance_count ?? 0) > 0) {
+					entries.push({label: 'M', class_name: 'maintenance'});
+				}
+
+				if (d.has_acknowledged_problem === true || Number(d.group_acknowledged_problem_count ?? 0) > 0) {
+					entries.push({label: 'A', class_name: 'acknowledged'});
+				}
+
+				if (d.trend === 'up' || Number(d.group_trend_up_count ?? 0) > Number(d.group_trend_down_count ?? 0)) {
+					entries.push({label: '+', class_name: 'trend-up'});
+				}
+				else if (
+					d.trend === 'down'
+					|| Number(d.group_trend_down_count ?? 0) > Number(d.group_trend_up_count ?? 0)
+				) {
+					entries.push({label: '-', class_name: 'trend-down'});
+				}
+				else if (d.trend === 'flat') {
+					entries.push({label: '=', class_name: 'trend-flat'});
+				}
+				else if (d.trend === 'changed') {
+					entries.push({label: '*', class_name: 'trend-changed'});
+				}
+
+				entries.slice(0, 3).forEach((entry, index) => {
+					const x = -this.#cell_width * 0.26 + index * this.#cell_width * 0.18;
+					const y = -this.#cell_height * 0.28;
+
+					const badge = indicators.append('g')
+						.attr('class', `svg-honeycomb-indicator svg-honeycomb-indicator-${entry.class_name}`)
+						.attr('transform', `translate(${x} ${y})`);
+
+					badge.append('circle')
+						.attr('r', this.#cell_width * 0.07);
+
+					badge.append('text')
+						.attr('text-anchor', 'middle')
+						.attr('dominant-baseline', 'central')
+						.text(entry.label);
+				});
+			});
+	}
+
+	#drawGroupHeaderChrome(cell) {
+		cell.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_GROUP_BADGE}`)?.remove());
+		cell.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_GROUP_CHEVRON}`)?.remove());
+		cell.call(cell => this.#drawCellIndicators(cell));
+
+		cell
+			.append('text')
+			.attr('class', CSVGBetterHoneycomb.ZBX_STYLE_GROUP_CHEVRON)
+			.attr('x', -this.#cell_width * 0.34)
+			.attr('y', -this.#cell_height * 0.31)
+			.attr('text-anchor', 'middle')
+			.attr('dominant-baseline', 'central')
+			.text(d => d.is_collapsed === true ? '+' : '-');
+
+		cell
+			.filter(d => Number(d.group_problem_count ?? 0) > 0)
+			.append('g')
+			.attr('class', CSVGBetterHoneycomb.ZBX_STYLE_GROUP_BADGE)
+			.attr('transform', `translate(${this.#cell_width * 0.29} ${-this.#cell_height * 0.31})`)
+			.call(badge => {
+				badge.append('circle')
+					.attr('r', this.#cell_width * 0.095);
+
+				badge.append('text')
+					.attr('text-anchor', 'middle')
+					.attr('dominant-baseline', 'central')
+					.text(d => Number(d.group_problem_count) > 99 ? '99+' : d.group_problem_count);
+			});
+	}
+
+	#drawTitle(cell) {
+		cell.call(cell => cell.select('title')?.remove());
+
+		cell.append('title')
+			.text(d => {
+				if (d.is_group_header === true) {
+					const state = d.is_collapsed === true ? 'collapsed' : 'expanded';
+					const details = [
+						Number(d.group_maintenance_count ?? 0) > 0
+							? `${d.group_maintenance_count} in maintenance`
+							: null,
+						Number(d.group_acknowledged_problem_count ?? 0) > 0
+							? `${d.group_acknowledged_problem_count} acknowledged`
+							: null,
+						Number(d.group_trend_up_count ?? 0) > 0 ? `${d.group_trend_up_count} up` : null,
+						Number(d.group_trend_down_count ?? 0) > 0 ? `${d.group_trend_down_count} down` : null
+					].filter(line => line !== null).join('\n');
+
+					return `${d.primary_label}\n${d.secondary_label}\nGroup is ${state}`
+						+ (details !== '' ? `\n${details}` : '');
+				}
+
+				const lines = [
+					d.hostname !== undefined ? `Host: ${d.hostname}` : null,
+					d.item_name !== undefined ? `Item: ${d.item_name}` : null,
+					d.key_ !== undefined && d.key_ !== null ? `Key: ${d.key_}` : null,
+					d.formatted_value !== undefined ? `Value: ${d.formatted_value}` : `Value: ${d.value}`,
+					d.trend !== undefined && d.trend !== 'unknown' ? `Trend: ${d.trend}` : null,
+					d.is_maintenance === true ? 'Host is in maintenance' : null,
+					d.has_acknowledged_problem === true ? 'Current problem is acknowledged' : null,
+					d.last_clock !== undefined && d.last_clock !== null
+						? `Last update: ${new Date(Number(d.last_clock) * 1000).toLocaleString()}`
+						: null,
+					d.group_name !== undefined && d.group_name !== '' ? `Group: ${d.group_name}` : null
+				];
+
+				return lines.filter(line => line !== null).join('\n');
+			});
+	}
+
+	#getCellAriaLabel(d) {
+		const parts = [
+			d.hostname !== undefined ? `Host ${d.hostname}` : null,
+			d.item_name !== undefined ? `Item ${d.item_name}` : null,
+			d.formatted_value !== undefined ? `Value ${d.formatted_value}` : `Value ${d.value}`,
+			d.trend !== undefined && d.trend !== 'unknown' ? `Trend ${d.trend}` : null,
+			d.is_maintenance === true ? 'Maintenance' : null,
+			d.has_acknowledged_problem === true ? 'Acknowledged problem' : null
+		];
+
+		return `${parts.filter(part => part !== null).join('. ')}. Press Enter to open latest data.`;
+	}
+
 	#getWorstGroupColor(group_children) {
 		let worst = null;
 
@@ -1202,11 +1480,13 @@ class CSVGBetterHoneycomb {
 			const value = Number.parseFloat(cell.value);
 
 			if (Number.isFinite(value)) {
-				if (value === 0) {
+				const problem_value = Number(this.#config.binary_problem_value ?? 0);
+
+				if (value === problem_value) {
 					return 100;
 				}
 
-				if (value === 1) {
+				if (value === 0 || value === 1) {
 					return 0;
 				}
 			}

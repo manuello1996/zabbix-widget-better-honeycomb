@@ -58,6 +58,22 @@ class WidgetForm extends CWidgetForm {
 	public const GROUP_BY_HOSTGROUP_AND_HOST = 2;
 	public const GROUP_BY_NONE = 3;
 
+	public const BINARY_ZERO_PROBLEM = 0;
+	public const BINARY_ONE_PROBLEM = 1;
+
+	public const GROUP_SORT_NAME = 0;
+	public const GROUP_SORT_SEVERITY = 1;
+	public const GROUP_SORT_PROBLEM_COUNT = 2;
+
+	public const CELL_SORT_DEFAULT = 0;
+	public const CELL_SORT_SEVERITY = 1;
+	public const CELL_SORT_VALUE_ASC = 2;
+	public const CELL_SORT_VALUE_DESC = 3;
+
+	public const COLLAPSE_PERSISTENCE_SESSION = 0;
+	public const COLLAPSE_PERSISTENCE_LOCAL = 1;
+	public const COLLAPSE_PERSISTENCE_RESET = 2;
+
 	public function addFields(): self {
 		return $this
 			->addField($this->isTemplateDashboard()
@@ -105,7 +121,35 @@ class WidgetForm extends CWidgetForm {
 				new CWidgetFieldCheckBox('collapse_groups_on_load', _('Load all groups collapsed'))
 			)
 			->addField(
+				(new CWidgetFieldSelect('collapse_persistence', _('Collapse state'), [
+					self::COLLAPSE_PERSISTENCE_SESSION => _('Remember during browser session'),
+					self::COLLAPSE_PERSISTENCE_LOCAL => _('Remember in this browser'),
+					self::COLLAPSE_PERSISTENCE_RESET => _('Reset on every load')
+				]))->setDefault(self::COLLAPSE_PERSISTENCE_SESSION)
+			)
+			->addField(
 				new CWidgetFieldCheckBox('force_show_all', _('Show all honeycombs (no hiding)'))
+			)
+			->addField(
+				new CWidgetFieldCheckBox('show_filter', _('Show search filter'))
+			)
+			->addField(
+				new CWidgetFieldCheckBox('show_legend', _('Show legend'))
+			)
+			->addField(
+				(new CWidgetFieldSelect('group_sort', _('Group sorting'), [
+					self::GROUP_SORT_NAME => _('Name'),
+					self::GROUP_SORT_SEVERITY => _('Worst severity'),
+					self::GROUP_SORT_PROBLEM_COUNT => _('Problem count')
+				]))->setDefault(self::GROUP_SORT_NAME)
+			)
+			->addField(
+				(new CWidgetFieldSelect('cell_sort', _('Cell sorting'), [
+					self::CELL_SORT_DEFAULT => _('Default'),
+					self::CELL_SORT_SEVERITY => _('Severity'),
+					self::CELL_SORT_VALUE_ASC => _('Value ascending'),
+					self::CELL_SORT_VALUE_DESC => _('Value descending')
+				]))->setDefault(self::CELL_SORT_DEFAULT)
 			)
 			->addField(
 				(new CWidgetFieldCheckBox('drilldown_new_tab', _('Open latest data in new tab')))->setDefault(1)
@@ -234,6 +278,12 @@ class WidgetForm extends CWidgetForm {
 			)
 			->addField(
 				new CWidgetFieldCheckBox('auto_color_binary', _('Auto color by value (0/1)'))
+			)
+			->addField(
+				(new CWidgetFieldSelect('binary_problem_value', _('Binary problem value'), [
+					self::BINARY_ZERO_PROBLEM => _('0 is problem, 1 is OK'),
+					self::BINARY_ONE_PROBLEM => _('1 is problem, 0 is OK')
+				]))->setDefault(self::BINARY_ZERO_PROBLEM)
 			)
 			->addField(
 				(new CWidgetFieldColor('auto_color_zero', _('Color for 0')))->setDefault('FF465C')
