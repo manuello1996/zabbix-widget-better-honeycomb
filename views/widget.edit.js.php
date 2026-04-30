@@ -84,6 +84,7 @@ window.widget_better_honeycomb_form = new class {
 
 		this.#updateActiveProblemFields();
 		this.#updateAutoColorFields();
+		this.#updateGroupHeaderColorField();
 	}
 
 	#countFilledThresholds() {
@@ -164,6 +165,16 @@ window.widget_better_honeycomb_form = new class {
 		const show = highlight_problem_items !== null && highlight_problem_items.checked;
 
 		for (const row of this.#form.querySelectorAll('.js-active-problem-color')) {
+			row.style.display = show ? '' : 'none';
+			row.querySelectorAll('input').forEach(input => input.disabled = !show);
+		}
+	}
+
+	#updateGroupHeaderColorField() {
+		const group_by_none = document.getElementById('group_by_<?= WidgetForm::GROUP_BY_NONE ?>');
+		const show = group_by_none === null || !group_by_none.checked;
+
+		for (const row of this.#form.querySelectorAll('.js-group-header-color')) {
 			row.style.display = show ? '' : 'none';
 			row.querySelectorAll('input').forEach(input => input.disabled = !show);
 		}

@@ -190,6 +190,7 @@ class CWidgetBetterHoneycomb extends CWidget {
 			drilldown_new_tab: true,
 			show_filter: false,
 			show_legend: false,
+			group_header_color: '3B82F6',
 			has_more: false,
 			force_show_all_limit: 5000,
 			compact_rendering_threshold: 1500,
@@ -429,6 +430,10 @@ class CWidgetBetterHoneycomb extends CWidget {
 
 	#getLegendItems() {
 		const items = [];
+
+		if (this.#last_cells.some(cell => cell.is_group_header === true)) {
+			items.push({color: this.#last_config?.group_header_color ?? '3B82F6', label: t('Group header')});
+		}
 
 		if (this.#last_config?.auto_color_binary === true) {
 			items.push(

@@ -725,6 +725,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'drilldown_new_tab' => ($this->fields_values['drilldown_new_tab'] ?? 1) == 1,
 			'show_filter' => ($this->fields_values['show_filter'] ?? 0) == 1,
 			'show_legend' => ($this->fields_values['show_legend'] ?? 0) == 1,
+			'group_header_color' => $this->normalizeColor(
+				$this->fields_values['group_header_color'] ?? '3B82F6',
+				'3B82F6'
+			),
 			'group_sort' => (int) ($this->fields_values['group_sort'] ?? WidgetForm::GROUP_SORT_NAME),
 			'cell_sort' => (int) ($this->fields_values['cell_sort'] ?? WidgetForm::CELL_SORT_DEFAULT)
 		];

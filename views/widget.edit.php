@@ -64,6 +64,9 @@ $form
 		new CWidgetFieldRadioButtonListView($data['fields']['group_by'])
 	)
 	->addField(
+		(new CWidgetFieldColorView($data['fields']['group_header_color']))->addRowClass('js-group-header-color')
+	)
+	->addField(
 		new CWidgetFieldCheckBoxView($data['fields']['group_new_line'])
 	)
 	->addField(

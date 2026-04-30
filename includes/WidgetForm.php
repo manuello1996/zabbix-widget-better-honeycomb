@@ -115,6 +115,9 @@ class WidgetForm extends CWidgetForm {
 				]))->setDefault(self::GROUP_BY_NONE)
 			)
 			->addField(
+				(new CWidgetFieldColor('group_header_color', _('Group header color')))->setDefault('3B82F6')
+			)
+			->addField(
 				new CWidgetFieldCheckBox('group_new_line', _('Start each group on a new line'))
 			)
 			->addField(

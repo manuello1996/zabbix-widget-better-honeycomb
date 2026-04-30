@@ -18,8 +18,7 @@ class CSVGBetterHoneycomb {
 	static ZBX_COLOR_CELL_FILL_LIGHT =		'#a5c6d4';
 	static ZBX_COLOR_CELL_FILL_DARK =		'#668696';
 	static ZBX_COLOR_CELL_ACTIVE_PROBLEM =	'FFC107';
-	static ZBX_COLOR_CELL_GROUP_HEADER_LIGHT = '#d8e3ea';
-	static ZBX_COLOR_CELL_GROUP_HEADER_DARK = '#536a78';
+	static ZBX_COLOR_CELL_GROUP_HEADER =		'3B82F6';
 	static ZBX_STYLE_CLASS =				'svg-honeycomb';
 	static ZBX_STYLE_HONEYCOMB_CONTAINER =	'svg-honeycomb-container';
 	static ZBX_STYLE_CELL =					'svg-honeycomb-cell';
@@ -36,8 +35,6 @@ class CSVGBetterHoneycomb {
 	static ZBX_STYLE_CELL_OTHER_ELLIPSIS =	'svg-honeycomb-cell-other-ellipsis';
 	static ZBX_STYLE_CONTENT =				'svg-honeycomb-content';
 	static ZBX_STYLE_BACKDROP =				'svg-honeycomb-backdrop';
-	static ZBX_STYLE_INDICATORS =			'svg-honeycomb-indicators';
-	static ZBX_STYLE_GROUP_BADGE =			'svg-honeycomb-group-badge';
 	static ZBX_STYLE_GROUP_CHEVRON =		'svg-honeycomb-group-chevron';
 	static ZBX_STYLE_LABEL =				'svg-honeycomb-label';
 	static ZBX_STYLE_LABEL_PRIMARY =		'svg-honeycomb-label-primary';
@@ -528,7 +525,6 @@ class CSVGBetterHoneycomb {
 						}
 						else if (d.has_more !== true) {
 							this.#drawTitle(cell);
-							this.#drawCellIndicators(cell);
 							this.#drawLabel(cell);
 						}
 
@@ -658,8 +654,6 @@ class CSVGBetterHoneycomb {
 			.style('--stroke', 'transparent')
 			.style('--stroke-selected', 'transparent')
 			.style('pointer-events', 'none')
-			.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_INDICATORS}`)?.remove())
-			.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_GROUP_BADGE}`)?.remove())
 			.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_GROUP_CHEVRON}`)?.remove())
 			.call(cell => cell.select('foreignObject')?.remove())
 			.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_BACKDROP}`)?.remove());
@@ -754,7 +748,6 @@ class CSVGBetterHoneycomb {
 			.attr('role', 'button')
 			.attr('tabindex', 0)
 			.attr('aria-label', d => this.#getCellAriaLabel(d))
-			.call(cell => this.#drawCellIndicators(cell))
 			.on('click', (e, d) => {
 				if (this.selectCell(d.itemid)) {
 					this.#svg.dispatch(CSVGBetterHoneycomb.EVENT_CELL_CLICK, {
@@ -1211,17 +1204,7 @@ class CSVGBetterHoneycomb {
 		}
 
 		if (d.is_group_header === true) {
-			if (d.is_collapsed === true && Array.isArray(d.group_children) && d.group_children.length > 0) {
-				const worst_color = this.#getWorstGroupColor(d.group_children);
-
-				if (worst_color !== null) {
-					return worst_color;
-				}
-			}
-
-			return document.documentElement.getAttribute('color-scheme') === ZBX_COLOR_SCHEME_LIGHT
-				? CSVGBetterHoneycomb.ZBX_COLOR_CELL_GROUP_HEADER_LIGHT
-				: CSVGBetterHoneycomb.ZBX_COLOR_CELL_GROUP_HEADER_DARK;
+			return `#${this.#config.group_header_color ?? CSVGBetterHoneycomb.ZBX_COLOR_CELL_GROUP_HEADER}`;
 		}
 
 		const bg_color = this.#config.bg_color !== '' ? `#${this.#config.bg_color}` : null;
@@ -1286,7 +1269,6 @@ class CSVGBetterHoneycomb {
 			.attr('role', 'button')
 			.attr('tabindex', 0)
 			.attr('aria-label', d => this.#getCellAriaLabel(d))
-			.call(cell => this.#drawCellIndicators(cell))
 			.call(cell => cell.select('foreignObject')?.remove())
 			.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_BACKDROP}`)?.remove())
 			.on('click', (e, d) => {
@@ -1323,72 +1305,8 @@ class CSVGBetterHoneycomb {
 			.on('mouseleave', null);
 	}
 
-	#drawCellIndicators(cell) {
-		cell.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_INDICATORS}`)?.remove());
-
-		cell
-			.filter(d =>
-				d.is_maintenance === true
-				|| d.has_acknowledged_problem === true
-				|| Number(d.group_maintenance_count ?? 0) > 0
-				|| Number(d.group_acknowledged_problem_count ?? 0) > 0
-				|| Number(d.group_trend_up_count ?? 0) > 0
-				|| Number(d.group_trend_down_count ?? 0) > 0
-				|| ['up', 'down', 'flat', 'changed'].includes(d.trend)
-			)
-			.append('g')
-			.attr('class', CSVGBetterHoneycomb.ZBX_STYLE_INDICATORS)
-			.each((d, i, cells) => {
-				const indicators = d3.select(cells[i]);
-				const entries = [];
-
-				if (d.is_maintenance === true || Number(d.group_maintenance_count ?? 0) > 0) {
-					entries.push({label: 'M', class_name: 'maintenance'});
-				}
-
-				if (d.has_acknowledged_problem === true || Number(d.group_acknowledged_problem_count ?? 0) > 0) {
-					entries.push({label: 'A', class_name: 'acknowledged'});
-				}
-
-				if (d.trend === 'up' || Number(d.group_trend_up_count ?? 0) > Number(d.group_trend_down_count ?? 0)) {
-					entries.push({label: '+', class_name: 'trend-up'});
-				}
-				else if (
-					d.trend === 'down'
-					|| Number(d.group_trend_down_count ?? 0) > Number(d.group_trend_up_count ?? 0)
-				) {
-					entries.push({label: '-', class_name: 'trend-down'});
-				}
-				else if (d.trend === 'flat') {
-					entries.push({label: '=', class_name: 'trend-flat'});
-				}
-				else if (d.trend === 'changed') {
-					entries.push({label: '*', class_name: 'trend-changed'});
-				}
-
-				entries.slice(0, 3).forEach((entry, index) => {
-					const x = -this.#cell_width * 0.26 + index * this.#cell_width * 0.18;
-					const y = -this.#cell_height * 0.28;
-
-					const badge = indicators.append('g')
-						.attr('class', `svg-honeycomb-indicator svg-honeycomb-indicator-${entry.class_name}`)
-						.attr('transform', `translate(${x} ${y})`);
-
-					badge.append('circle')
-						.attr('r', this.#cell_width * 0.07);
-
-					badge.append('text')
-						.attr('text-anchor', 'middle')
-						.attr('dominant-baseline', 'central')
-						.text(entry.label);
-				});
-			});
-	}
-
 	#drawGroupHeaderChrome(cell) {
-		cell.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_GROUP_BADGE}`)?.remove());
 		cell.call(cell => cell.select(`.${CSVGBetterHoneycomb.ZBX_STYLE_GROUP_CHEVRON}`)?.remove());
-		cell.call(cell => this.#drawCellIndicators(cell));
 
 		cell
 			.append('text')
@@ -1398,21 +1316,6 @@ class CSVGBetterHoneycomb {
 			.attr('text-anchor', 'middle')
 			.attr('dominant-baseline', 'central')
 			.text(d => d.is_collapsed === true ? '+' : '-');
-
-		cell
-			.filter(d => Number(d.group_problem_count ?? 0) > 0)
-			.append('g')
-			.attr('class', CSVGBetterHoneycomb.ZBX_STYLE_GROUP_BADGE)
-			.attr('transform', `translate(${this.#cell_width * 0.29} ${-this.#cell_height * 0.31})`)
-			.call(badge => {
-				badge.append('circle')
-					.attr('r', this.#cell_width * 0.095);
-
-				badge.append('text')
-					.attr('text-anchor', 'middle')
-					.attr('dominant-baseline', 'central')
-					.text(d => Number(d.group_problem_count) > 99 ? '99+' : d.group_problem_count);
-			});
 	}
 
 	#drawTitle(cell) {
@@ -1468,66 +1371,6 @@ class CSVGBetterHoneycomb {
 		];
 
 		return `${parts.filter(part => part !== null).join('. ')}. Press Enter to open latest data.`;
-	}
-
-	#getWorstGroupColor(group_children) {
-		let worst = null;
-
-		for (const child of group_children) {
-			const color = this.#getFillColor({
-				...child,
-				is_group_header: false
-			});
-
-			if (color === this.#getActiveProblemColor()) {
-				return color;
-			}
-
-			const score = this.#getSeverityScore(child);
-
-			if (worst === null || score > worst.score) {
-				worst = {
-					color,
-					score
-				};
-			}
-		}
-
-		return worst?.color ?? null;
-	}
-
-	#getSeverityScore(cell) {
-		if (this.#config.auto_color_binary === true && cell.is_numeric) {
-			const value = Number.parseFloat(cell.value);
-
-			if (Number.isFinite(value)) {
-				const problem_value = Number(this.#config.binary_problem_value ?? 0);
-
-				if (value === problem_value) {
-					return 100;
-				}
-
-				if (value === 0 || value === 1) {
-					return 0;
-				}
-			}
-		}
-
-		if (this.#config.thresholds.length === 0 || !cell.is_numeric) {
-			return 0;
-		}
-
-		const value = Number.parseFloat(cell.value);
-		const threshold_type = cell.is_binary_units ? 'threshold_binary' : 'threshold';
-		let score = 0;
-
-		for (const threshold of this.#config.thresholds) {
-			if (value >= threshold[threshold_type]) {
-				score++;
-			}
-		}
-
-		return score;
 	}
 
 	#getActiveProblemColor() {
