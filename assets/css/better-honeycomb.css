@@ -43,6 +43,37 @@
 	color: var(--color-warning, #d98200);
 }
 
+.better-honeycomb-drilldown-menu {
+	position: fixed;
+	z-index: 1000;
+	display: flex;
+	flex-direction: column;
+	min-width: 150px;
+	padding: 4px;
+	border: 1px solid var(--border-color, #dfe4e7);
+	border-radius: 4px;
+	background: var(--body-bg-color, #fff);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, .18);
+}
+
+.better-honeycomb-drilldown-menu button {
+	display: block;
+	width: 100%;
+	padding: 6px 8px;
+	border: 0;
+	border-radius: 3px;
+	background: transparent;
+	color: var(--font-color, #1f2c33);
+	text-align: left;
+	cursor: pointer;
+}
+
+.better-honeycomb-drilldown-menu button:hover,
+.better-honeycomb-drilldown-menu button:focus {
+	background: var(--hover-bg-color, #e8f5ff);
+	outline: none;
+}
+
 .svg-honeycomb-cell[tabindex="0"] {
 	outline: none;
 }

@@ -61,7 +61,6 @@ window.widget_better_honeycomb_form = new class {
 				return;
 			}
 
-			jQuery.colorpicker('destroy', jQuery(e.target));
 			this.#initColorpicker(e.target);
 		});
 
@@ -83,6 +82,7 @@ window.widget_better_honeycomb_form = new class {
 			interpolation.checked = false;
 		}
 
+		this.#updateActiveProblemFields();
 		this.#updateAutoColorFields();
 	}
 
@@ -156,26 +156,30 @@ window.widget_better_honeycomb_form = new class {
 		)) {
 			row.style.display = show ? '' : 'none';
 			row.querySelectorAll('input, z-select').forEach(input => input.disabled = !show);
+		}
+	}
 
-			if (show) {
-				for (const colorpicker of row.querySelectorAll('.<?= ZBX_STYLE_COLOR_PICKER ?> input')) {
-					jQuery.colorpicker('destroy', jQuery(colorpicker));
-					this.#initColorpicker(colorpicker);
-				}
-			}
+	#updateActiveProblemFields() {
+		const highlight_problem_items = document.getElementById('highlight_problem_items');
+		const show = highlight_problem_items !== null && highlight_problem_items.checked;
+
+		for (const row of this.#form.querySelectorAll('.js-active-problem-color')) {
+			row.style.display = show ? '' : 'none';
+			row.querySelectorAll('input').forEach(input => input.disabled = !show);
 		}
 	}
 
 	#initColorpicker(colorpicker) {
-		const $colorpicker = jQuery(colorpicker);
-		const $append_to = $colorpicker.closest('.js-fieldset-adv-conf').length
-			? $colorpicker.closest('.js-fieldset-adv-conf')
-			: $colorpicker.closest('.input-color-picker');
+		if (colorpicker.dataset.betterHoneycombColorpickerInitialized === '1') {
+			return;
+		}
 
-		$colorpicker.colorpicker({
-			appendTo: $append_to.length ? $append_to : '.overlay-dialogue-body',
+		jQuery(colorpicker).colorpicker({
+			appendTo: '.overlay-dialogue-body',
 			use_default: !colorpicker.name.includes('thresholds')
 		});
+
+		colorpicker.dataset.betterHoneycombColorpickerInitialized = '1';
 	}
 
 }

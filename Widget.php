@@ -35,6 +35,8 @@ class Widget extends CWidget {
 				'Download image' => _('Download image'),
 				'Filter honeycombs' => _('Filter honeycombs'),
 				'Honeycomb color legend' => _('Honeycomb color legend'),
+				'Active problem' => _('Active problem'),
+				'Latest data' => _('Latest data'),
 				'Value 0' => _('Value 0'),
 				'Value 1' => _('Value 1')
 			]

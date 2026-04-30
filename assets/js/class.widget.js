@@ -99,6 +99,11 @@ class CWidgetBetterHoneycomb extends CWidget {
 	#warning = null;
 
 	/**
+	 * @type {HTMLDivElement|null}
+	 */
+	#drilldown_menu = null;
+
+	/**
 	 * @type {number}
 	 */
 	#filter_update_timeout_id;
@@ -190,6 +195,8 @@ class CWidgetBetterHoneycomb extends CWidget {
 			compact_rendering_threshold: 1500,
 			group_sort: 0,
 			cell_sort: 0,
+			highlight_problem_items: true,
+			active_problem_color: 'FFC107',
 			binary_problem_value: 0,
 			auto_color_binary: false,
 			auto_color_zero: 'FF465C',
@@ -227,7 +234,7 @@ class CWidgetBetterHoneycomb extends CWidget {
 					this.#selected_key_ = this.#cells_data.get(this.#selected_itemid).key_;
 
 					this.#broadcast();
-					this.#openDrilldown(this.#cells_data.get(this.#selected_itemid));
+					this.#openCellDrilldown(this.#cells_data.get(this.#selected_itemid), e.detail);
 			});
 
 			this.#honeycomb.getSVGElement().addEventListener(CSVGBetterHoneycomb.EVENT_CELL_ENTER, e => {
@@ -428,6 +435,10 @@ class CWidgetBetterHoneycomb extends CWidget {
 				{color: this.#last_config.auto_color_zero, label: t('Value 0')},
 				{color: this.#last_config.auto_color_one, label: t('Value 1')}
 			);
+		}
+
+		if (this.#last_config?.highlight_problem_items !== false) {
+			items.push({color: this.#last_config.active_problem_color ?? 'FFC107', label: t('Active problem')});
 		}
 
 		for (const threshold of this.#last_config?.thresholds ?? []) {
@@ -750,7 +761,9 @@ class CWidgetBetterHoneycomb extends CWidget {
 	}
 
 	#getProblemCount(cells) {
-		return cells.filter(cell => Number(cell.severity_score ?? this.#getSeverityScore(cell)) > 0).length;
+		return cells.filter(cell =>
+			Number(cell.severity_score ?? this.#getSeverityScore(cell)) > 0 || cell.has_active_problem === true
+		).length;
 	}
 
 	#getWorstSeverity(cells) {
@@ -786,27 +799,153 @@ class CWidgetBetterHoneycomb extends CWidget {
 			.length;
 	}
 
-	#openDrilldown(cell) {
+	#openCellDrilldown(cell, event_detail = {}) {
+		if (this.#isProblemFallbackColored(cell)) {
+			this.#showDrilldownMenu(cell, event_detail);
+		}
+		else {
+			this.#openLatestDataDrilldown(cell);
+		}
+	}
+
+	#openLatestDataDrilldown(cell) {
+		if (cell === undefined) {
+			return;
+		}
+
+		const itemid = `${cell.itemid ?? ''}`.trim();
+
+		if (itemid === '') {
+			return;
+		}
+
+		const params = new URLSearchParams();
+		params.set('action', 'showlatest');
+		params.append('itemids[]', itemid);
+
+		const url = `history.php?${params.toString()}`;
+
+		window.open(url, this.#last_config?.drilldown_new_tab === false ? '_self' : '_blank');
+	}
+
+	#showDrilldownMenu(cell, event_detail = {}) {
+		this.#closeDrilldownMenu();
+
+		const menu = document.createElement('div');
+		menu.className = 'better-honeycomb-drilldown-menu';
+		menu.setAttribute('role', 'menu');
+
+		const latest = document.createElement('button');
+		latest.type = 'button';
+		latest.textContent = t('Latest data');
+		latest.setAttribute('role', 'menuitem');
+		latest.addEventListener('click', () => {
+			this.#closeDrilldownMenu();
+			this.#openLatestDataDrilldown(cell);
+		});
+
+		const problems = document.createElement('button');
+		problems.type = 'button';
+		problems.textContent = t('Active problem');
+		problems.setAttribute('role', 'menuitem');
+		problems.addEventListener('click', () => {
+			this.#closeDrilldownMenu();
+			this.#openProblemDrilldown(cell);
+		});
+
+		menu.append(latest, problems);
+		document.body.append(menu);
+
+		const menu_rect = menu.getBoundingClientRect();
+		const x = Number(event_detail.client_x ?? 0);
+		const y = Number(event_detail.client_y ?? 0);
+
+		menu.style.left = `${Math.min(Math.max(4, x), window.innerWidth - menu_rect.width - 4)}px`;
+		menu.style.top = `${Math.min(Math.max(4, y), window.innerHeight - menu_rect.height - 4)}px`;
+
+		const close_on_pointer = event => {
+			if (!menu.contains(event.target)) {
+				this.#closeDrilldownMenu();
+			}
+		};
+		const close_on_key = event => {
+			if (event.key === 'Escape') {
+				this.#closeDrilldownMenu();
+			}
+		};
+
+		menu._better_honeycomb_cleanup = () => {
+			document.removeEventListener('pointerdown', close_on_pointer);
+			document.removeEventListener('keydown', close_on_key);
+		};
+
+		setTimeout(() => document.addEventListener('pointerdown', close_on_pointer), 0);
+		document.addEventListener('keydown', close_on_key);
+		this.#drilldown_menu = menu;
+		latest.focus();
+	}
+
+	#closeDrilldownMenu() {
+		this.#drilldown_menu?._better_honeycomb_cleanup?.();
+		this.#drilldown_menu?.remove();
+		this.#drilldown_menu = null;
+	}
+
+	#openProblemDrilldown(cell) {
 		if (cell === undefined) {
 			return;
 		}
 
 		const hostid = `${cell.hostid ?? ''}`.trim();
-		const item_name = `${cell.item_name ?? ''}`.trim();
+		const triggerids = Array.isArray(cell.problem_triggerids) ? cell.problem_triggerids : [];
 
-		if (hostid === '' || item_name === '') {
+		if (hostid === '' && triggerids.length === 0) {
 			return;
 		}
 
 		const params = new URLSearchParams();
-		params.set('action', 'latest.view');
+		params.set('action', 'problem.view');
 		params.set('filter_set', '1');
-		params.append('hostids[]', hostid);
-		params.set('name', item_name);
+
+		if (hostid !== '') {
+			params.append('hostids[]', hostid);
+		}
+
+		for (const triggerid of triggerids) {
+			params.append('triggerids[]', triggerid);
+		}
 
 		const url = `zabbix.php?${params.toString()}`;
 
 		window.open(url, this.#last_config?.drilldown_new_tab === false ? '_self' : '_blank');
+	}
+
+	#isProblemFallbackColored(cell) {
+		if (cell === undefined || this.#last_config?.highlight_problem_items === false || cell.has_active_problem !== true) {
+			return false;
+		}
+
+		if (this.#last_config?.auto_color_binary === true && cell.is_numeric) {
+			const value = Number.parseFloat(cell.value);
+
+			if (Number.isFinite(value) && (value === 0 || value === 1)) {
+				return false;
+			}
+		}
+
+		if (!cell.is_numeric) {
+			return true;
+		}
+
+		const value = Number.parseFloat(cell.value);
+		const threshold_type = cell.is_binary_units ? 'threshold_binary' : 'threshold';
+
+		if (!Number.isFinite(value)) {
+			return true;
+		}
+
+		return !(this.#last_config?.thresholds ?? [])
+			.some(threshold => value >= Number(threshold[threshold_type]));
 	}
 
 	onReferredUpdate() {
@@ -828,6 +967,7 @@ class CWidgetBetterHoneycomb extends CWidget {
 
 	onClearContents() {
 		clearTimeout(this.#filter_update_timeout_id);
+		this.#closeDrilldownMenu();
 
 		if (this.#honeycomb !== null) {
 			this.#honeycomb.destroy();

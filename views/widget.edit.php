@@ -217,6 +217,9 @@ function getLabelFieldsGroupView(CWidgetFormView $form, string $group_label, arr
 
 function getThresholdFieldsGroupView(CWidgetFormView $form, array $fields): CWidgetFieldsGroupView {
 	$color_interpolation_field = $form->registerField(new CWidgetFieldCheckBoxView($fields['interpolation']));
+	$highlight_problem_items_field =
+		$form->registerField(new CWidgetFieldCheckBoxView($fields['highlight_problem_items']));
+	$active_problem_color_field = $form->registerField(new CWidgetFieldColorView($fields['active_problem_color']));
 	$auto_color_binary_field = $form->registerField(new CWidgetFieldCheckBoxView($fields['auto_color_binary']));
 	$binary_problem_value_field = $form->registerField(new CWidgetFieldSelectView($fields['binary_problem_value']));
 	$auto_color_zero_field = $form->registerField(new CWidgetFieldColorView($fields['auto_color_zero']));
@@ -230,6 +233,13 @@ function getThresholdFieldsGroupView(CWidgetFormView $form, array $fields): CWid
 			(new CDiv([$color_interpolation_field->getView(), $color_interpolation_field->getLabel()]))
 				->addClass('form-row-interpolation')
 		])
+		->addItem([
+			(new CDiv([$highlight_problem_items_field->getView(), $highlight_problem_items_field->getLabel()]))
+				->addClass('form-row-highlight-problem-items')
+		])
+		->addField(
+			$active_problem_color_field->addRowClass('js-active-problem-color')
+		)
 		->addItem([
 			(new CDiv([$auto_color_binary_field->getView(), $auto_color_binary_field->getLabel()]))
 				->addClass('form-row-auto-color-binary')

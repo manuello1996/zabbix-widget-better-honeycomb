@@ -205,7 +205,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$batches = (int) ceil($total_items / $batch_size);
 		$show = array_flip($this->fields_values['show']);
 		$config = $this->getConfig();
-		$acknowledged_problem_itemids = $this->getAcknowledgedProblemItemIds(array_column($items, 'itemid'));
+		$problem_itemids = $this->getProblemItemIds(array_column($items, 'itemid'));
 		$history_period = timeUnitToSeconds(CSettingsHelper::get(CSettingsHelper::HISTORY_PERIOD));
 		$group_new_line = ($this->fields_values['group_new_line'] ?? 0) == 1;
 		$cells = [];
@@ -294,7 +294,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 						$last_clock,
 						$this->getSeverityScore($item, $last_value, $config),
 						$this->getValueTrend($item, $last_value, $previous_value),
-						array_key_exists($item['itemid'], $acknowledged_problem_itemids)
+						array_key_exists($item['itemid'], $problem_itemids['active']),
+						array_key_exists($item['itemid'], $problem_itemids['acknowledged']),
+						$problem_itemids['triggerids'][$item['itemid']] ?? []
 					);
 				}
 
@@ -362,7 +364,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 		?int $last_clock,
 		int $severity_score,
 		array $trend,
-		bool $has_acknowledged_problem
+		bool $has_active_problem,
+		bool $has_acknowledged_problem,
+		array $problem_triggerids
 	): array {
 		return [
 			'hostid' => $item['hostid'],
@@ -382,6 +386,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'is_problem' => $severity_score > 0,
 			'is_maintenance' => ((int) ($item['hosts'][0]['maintenance_status'] ?? HOST_MAINTENANCE_STATUS_OFF))
 				== HOST_MAINTENANCE_STATUS_ON,
+			'has_active_problem' => $has_active_problem,
+			'problem_triggerids' => $problem_triggerids,
 			'has_acknowledged_problem' => $has_acknowledged_problem,
 			'trend' => $trend['trend'],
 			'trend_delta' => $trend['delta'],
@@ -416,7 +422,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 			$severity_score = (int) ($cell['severity_score'] ?? 0);
 			$group_summaries[$current_group_id]['item_count']++;
-			$group_summaries[$current_group_id]['problem_count'] += $severity_score > 0 ? 1 : 0;
+			$group_summaries[$current_group_id]['problem_count'] +=
+				($severity_score > 0 || ($cell['has_active_problem'] ?? false)) ? 1 : 0;
 			$group_summaries[$current_group_id]['maintenance_count'] += ($cell['is_maintenance'] ?? false) ? 1 : 0;
 			$group_summaries[$current_group_id]['acknowledged_problem_count'] +=
 				($cell['has_acknowledged_problem'] ?? false) ? 1 : 0;
@@ -520,11 +527,15 @@ class WidgetView extends CControllerDashboardWidgetView {
 		];
 	}
 
-	private function getAcknowledgedProblemItemIds(array $itemids): array {
+	private function getProblemItemIds(array $itemids): array {
 		$itemids = array_values(array_unique(array_filter($itemids)));
 
 		if (!$itemids) {
-			return [];
+			return [
+				'active' => [],
+				'acknowledged' => [],
+				'triggerids' => []
+			];
 		}
 
 		try {
@@ -539,7 +550,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 			]);
 
 			if (!$triggers) {
-				return [];
+				return [
+					'active' => [],
+					'acknowledged' => [],
+					'triggerids' => []
+				];
 			}
 
 			$problems = API::Problem()->get([
@@ -550,22 +565,33 @@ class WidgetView extends CControllerDashboardWidgetView {
 			]);
 		}
 		catch (\Throwable $exception) {
-			return [];
+			return [
+				'active' => [],
+				'acknowledged' => [],
+				'triggerids' => []
+			];
 		}
 
+		$active_itemids = [];
 		$acknowledged_itemids = [];
+		$triggerids_by_itemid = [];
 
 		foreach ($problems as $problem) {
-			if ((int) ($problem['acknowledged'] ?? 0) !== 1) {
-				continue;
-			}
-
 			foreach ($triggers[$problem['objectid']]['items'] ?? [] as $item) {
-				$acknowledged_itemids[$item['itemid']] = true;
+				$active_itemids[$item['itemid']] = true;
+				$triggerids_by_itemid[$item['itemid']][$problem['objectid']] = $problem['objectid'];
+
+				if ((int) ($problem['acknowledged'] ?? 0) === 1) {
+					$acknowledged_itemids[$item['itemid']] = true;
+				}
 			}
 		}
 
-		return $acknowledged_itemids;
+		return [
+			'active' => $active_itemids,
+			'acknowledged' => $acknowledged_itemids,
+			'triggerids' => array_map('array_values', $triggerids_by_itemid)
+		];
 	}
 
 	private function getCellLabel(array $item, $last_value, array $context_fields_values): string {
@@ -738,6 +764,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 		}
 
 		$config['apply_interpolation'] = $this->fields_values['interpolation'] == 1;
+		$config['highlight_problem_items'] = ($this->fields_values['highlight_problem_items'] ?? 1) == 1;
+		$config['active_problem_color'] = $this->normalizeColor(
+			$this->fields_values['active_problem_color'] ?? 'FFC107',
+			'FFC107'
+		);
 		$config['thresholds'] = $this->fields_values['thresholds'];
 		$config['auto_color_binary'] = ($this->fields_values['auto_color_binary'] ?? 0) == 1;
 		$config['binary_problem_value'] = (int) ($this->fields_values['binary_problem_value']

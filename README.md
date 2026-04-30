@@ -44,6 +44,7 @@ Recommended additional captures for releases:
 - Large `Show all` result sets are capped and use compact rendering to keep dashboards responsive.
 - Optional rendered search filter for host, item, key, group, label, and value.
 - Optional legend for binary colors and thresholds.
+- Active problem item highlighting, enabled by default with configurable color per widget.
 - Scrollable widget body when content overflows.
 - Auto color by binary value (optional):
   - apply color only when value is exactly `0` or `1`
@@ -54,7 +55,7 @@ Recommended additional captures for releases:
 - Maintenance and acknowledged-problem indicators on cells and group headers.
 - Value trend hints based on the latest two values.
 - Stronger group header styling, problem badges, and clearer selection/focus outlines.
-- Drill-down on cell click to **Latest data** filtered for the clicked item context.
+- Drill-down on cell click to the item's latest 500 values history view.
 - Optional setting: open Latest data in same tab or new tab.
 - Exported image filenames include widget name and date.
 

@@ -277,6 +277,13 @@ class WidgetForm extends CWidgetForm {
 				new CWidgetFieldCheckBox('interpolation', _('Color interpolation'))
 			)
 			->addField(
+				(new CWidgetFieldCheckBox('highlight_problem_items', _('Highlight items in active problems')))
+					->setDefault(1)
+			)
+			->addField(
+				(new CWidgetFieldColor('active_problem_color', _('Active problem color')))->setDefault('FFC107')
+			)
+			->addField(
 				new CWidgetFieldCheckBox('auto_color_binary', _('Auto color by value (0/1)'))
 			)
 			->addField(

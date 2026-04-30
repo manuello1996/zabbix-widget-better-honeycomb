@@ -17,6 +17,7 @@ class CSVGBetterHoneycomb {
 
 	static ZBX_COLOR_CELL_FILL_LIGHT =		'#a5c6d4';
 	static ZBX_COLOR_CELL_FILL_DARK =		'#668696';
+	static ZBX_COLOR_CELL_ACTIVE_PROBLEM =	'FFC107';
 	static ZBX_COLOR_CELL_GROUP_HEADER_LIGHT = '#d8e3ea';
 	static ZBX_COLOR_CELL_GROUP_HEADER_DARK = '#536a78';
 	static ZBX_STYLE_CLASS =				'svg-honeycomb';
@@ -48,6 +49,8 @@ class CSVGBetterHoneycomb {
 	static LABEL_WIDTH_MIN = 56;
 	static FONT_SIZE_MIN = 12;
 	static LINE_HEIGHT = 1.15;
+	static HOVER_EXPAND_DELAY_MS = 60;
+	static HOVER_SCALE_DELAY_MS = 10;
 
 	static EVENT_CELL_CLICK = 'cell.click';
 	static EVENT_CELL_ENTER = 'cell.enter';
@@ -708,8 +711,8 @@ class CSVGBetterHoneycomb {
 							delete d.scale_timeout;
 							d.scaled = true;
 							this.#cellEnter(cell, d);
-						}, 50);
-					}, 150);
+						}, CSVGBetterHoneycomb.HOVER_SCALE_DELAY_MS);
+					}, CSVGBetterHoneycomb.HOVER_EXPAND_DELAY_MS);
 				}
 
 				this.#svg.dispatch(CSVGBetterHoneycomb.EVENT_CELL_ENTER, {
@@ -757,7 +760,9 @@ class CSVGBetterHoneycomb {
 					this.#svg.dispatch(CSVGBetterHoneycomb.EVENT_CELL_CLICK, {
 						detail: {
 							hostid: d.hostid,
-							itemid: d.itemid
+							itemid: d.itemid,
+							client_x: e.clientX,
+							client_y: e.clientY
 						}
 					});
 				}
@@ -773,7 +778,9 @@ class CSVGBetterHoneycomb {
 					this.#svg.dispatch(CSVGBetterHoneycomb.EVENT_CELL_CLICK, {
 						detail: {
 							hostid: d.hostid,
-							itemid: d.itemid
+							itemid: d.itemid,
+							client_x: e.clientX,
+							client_y: e.clientY
 						}
 					});
 				}
@@ -789,8 +796,8 @@ class CSVGBetterHoneycomb {
 							delete d.scale_timeout;
 							d.scaled = true;
 							this.#cellEnter(cell, d);
-						}, 50);
-					}, 150);
+						}, CSVGBetterHoneycomb.HOVER_SCALE_DELAY_MS);
+					}, CSVGBetterHoneycomb.HOVER_EXPAND_DELAY_MS);
 				}
 
 				this.#svg.dispatch(CSVGBetterHoneycomb.EVENT_CELL_ENTER, {
@@ -1218,6 +1225,9 @@ class CSVGBetterHoneycomb {
 		}
 
 		const bg_color = this.#config.bg_color !== '' ? `#${this.#config.bg_color}` : null;
+		const problem_color = this.#config.highlight_problem_items !== false && d.has_active_problem === true
+			? this.#getActiveProblemColor()
+			: bg_color;
 
 		if (this.#config.auto_color_binary === true && d.is_numeric) {
 			const value = Number.parseFloat(d.value);
@@ -1232,11 +1242,11 @@ class CSVGBetterHoneycomb {
 				}
 			}
 
-			return bg_color;
+			return problem_color;
 		}
 
 		if (this.#config.thresholds.length === 0 || !d.is_numeric) {
-			return bg_color;
+			return problem_color;
 		}
 
 		const value = parseFloat(d.value);
@@ -1251,7 +1261,7 @@ class CSVGBetterHoneycomb {
 
 			if (value < curr[threshold_type]) {
 				if (prev === null) {
-					return bg_color;
+					return problem_color;
 				}
 
 				if (apply_interpolation) {
@@ -1284,7 +1294,9 @@ class CSVGBetterHoneycomb {
 					this.#svg.dispatch(CSVGBetterHoneycomb.EVENT_CELL_CLICK, {
 						detail: {
 							hostid: d.hostid,
-							itemid: d.itemid
+							itemid: d.itemid,
+							client_x: e.clientX,
+							client_y: e.clientY
 						}
 					});
 				}
@@ -1300,7 +1312,9 @@ class CSVGBetterHoneycomb {
 					this.#svg.dispatch(CSVGBetterHoneycomb.EVENT_CELL_CLICK, {
 						detail: {
 							hostid: d.hostid,
-							itemid: d.itemid
+							itemid: d.itemid,
+							client_x: e.clientX,
+							client_y: e.clientY
 						}
 					});
 				}
@@ -1429,6 +1443,7 @@ class CSVGBetterHoneycomb {
 					d.key_ !== undefined && d.key_ !== null ? `Key: ${d.key_}` : null,
 					d.formatted_value !== undefined ? `Value: ${d.formatted_value}` : `Value: ${d.value}`,
 					d.trend !== undefined && d.trend !== 'unknown' ? `Trend: ${d.trend}` : null,
+					d.has_active_problem === true ? 'Item is used in an active problem' : null,
 					d.is_maintenance === true ? 'Host is in maintenance' : null,
 					d.has_acknowledged_problem === true ? 'Current problem is acknowledged' : null,
 					d.last_clock !== undefined && d.last_clock !== null
@@ -1447,6 +1462,7 @@ class CSVGBetterHoneycomb {
 			d.item_name !== undefined ? `Item ${d.item_name}` : null,
 			d.formatted_value !== undefined ? `Value ${d.formatted_value}` : `Value ${d.value}`,
 			d.trend !== undefined && d.trend !== 'unknown' ? `Trend ${d.trend}` : null,
+			d.has_active_problem === true ? 'Active problem item' : null,
 			d.is_maintenance === true ? 'Maintenance' : null,
 			d.has_acknowledged_problem === true ? 'Acknowledged problem' : null
 		];
@@ -1462,6 +1478,11 @@ class CSVGBetterHoneycomb {
 				...child,
 				is_group_header: false
 			});
+
+			if (color === this.#getActiveProblemColor()) {
+				return color;
+			}
+
 			const score = this.#getSeverityScore(child);
 
 			if (worst === null || score > worst.score) {
@@ -1507,6 +1528,10 @@ class CSVGBetterHoneycomb {
 		}
 
 		return score;
+	}
+
+	#getActiveProblemColor() {
+		return `#${this.#config.active_problem_color ?? CSVGBetterHoneycomb.ZBX_COLOR_CELL_ACTIVE_PROBLEM}`;
 	}
 
 	#getStrokeColor(d, wide = false) {
